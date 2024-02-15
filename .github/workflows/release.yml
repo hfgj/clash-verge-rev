@@ -76,7 +76,7 @@ jobs:
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: "Clash Verge v__VERSION__"
+          releaseName: "Clash Verge Rev v__VERSION__"
           releaseBody: "More new features are now supported."
           releaseDraft: false
           prerelease: false
@@ -122,7 +122,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{env.VERSION}}
-          name: "Clash Verge v${{env.VERSION}}"
+          name: "Clash Verge Rev v${{env.VERSION}}"
           body: "More new features are now supported."
           token: ${{ secrets.GITHUB_TOKEN }}
           files: src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage*
@@ -130,7 +130,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{env.VERSION}}
-          name: "Clash Verge v${{env.VERSION}}"
+          name: "Clash Verge Rev v${{env.VERSION}}"
           body: "More new features are now supported."
           token: ${{ secrets.GITHUB_TOKEN }}
           files: src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
