@@ -162,7 +162,12 @@ export const GroupsEditorViewer = (props: Props) => {
   useEffect(() => {
     if (prependSeq && appendSeq && deleteSeq)
       setCurrData(
-        yaml.dump({ prepend: prependSeq, append: appendSeq, delete: deleteSeq })
+        yaml.dump(
+          { prepend: prependSeq, append: appendSeq, delete: deleteSeq },
+          {
+            forceQuotes: true,
+          }
+        )
       );
   }, [prependSeq, appendSeq, deleteSeq]);
 
@@ -415,7 +420,9 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ minWidth: "240px" }}
-                        {...field}
+                        onChange={(e) => {
+                          field.onChange(parseInt(e.target.value));
+                        }}
                       />
                     </Item>
                   )}
@@ -431,7 +438,9 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ minWidth: "240px" }}
-                        {...field}
+                        onChange={(e) => {
+                          field.onChange(parseInt(e.target.value));
+                        }}
                       />
                     </Item>
                   )}
@@ -447,7 +456,9 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ minWidth: "240px" }}
-                        {...field}
+                        onChange={(e) => {
+                          field.onChange(parseInt(e.target.value));
+                        }}
                       />
                     </Item>
                   )}
@@ -478,7 +489,9 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ minWidth: "240px" }}
-                        {...field}
+                        onChange={(e) => {
+                          field.onChange(parseInt(e.target.value));
+                        }}
                       />
                     </Item>
                   )}
@@ -539,7 +552,9 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ minWidth: "240px" }}
-                        {...field}
+                        onChange={(e) => {
+                          field.onChange(parseInt(e.target.value));
+                        }}
                       />
                     </Item>
                   )}
