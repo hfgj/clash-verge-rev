@@ -67,11 +67,6 @@ jobs:
           pnpm i
           pnpm check ${{ matrix.target }}
 
-      - name: Setup Linux Config
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          cp src-tauri/tauri.linux.conf.json src-tauri/tauri.conf.json
-
       - name: Tauri build
         uses: tauri-apps/tauri-action@v0
         env:
@@ -86,8 +81,8 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: alpha
-          releaseName: "Clash Verge Rev Alpha"
+          tagName: alpha-__VERSION__
+          releaseName: "Clash Verge Rev Alpha __VERSION__"
           releaseBody: "More new features are now supported."
           releaseDraft: false
           prerelease: true
