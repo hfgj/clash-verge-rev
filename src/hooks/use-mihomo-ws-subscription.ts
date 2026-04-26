@@ -188,6 +188,12 @@ export const useMihomoWsSubscription = <T>(
   const [date, setDate] = useLocalStorage(storageKey, Date.now())
   const subscriptKey = buildSubscriptKey(date)
   const subscriptionCacheKey = subscriptKey ? `$sub$${subscriptKey}` : null
+  const lastSubscriptionCacheKeyRef = useRef<string | null>(null)
+  if (subscriptionCacheKey) {
+    lastSubscriptionCacheKeyRef.current = subscriptionCacheKey
+  }
+  const responseCacheKey =
+    subscriptionCacheKey ?? lastSubscriptionCacheKeyRef.current
 
   const queryClient = useQueryClient()
 
@@ -209,15 +215,12 @@ export const useMihomoWsSubscription = <T>(
   )
 
   const response = useQuery<T>({
-    queryKey: subscriptionCacheKey
-      ? [subscriptionCacheKey]
-      : ['$sub$__disabled__'],
+    queryKey: responseCacheKey ? [responseCacheKey] : ['$sub$__disabled__'],
     queryFn: () =>
-      queryClient.getQueryData<T>([subscriptionCacheKey!]) ?? fallbackData,
+      queryClient.getQueryData<T>([responseCacheKey!]) ?? fallbackData,
     initialData: () =>
-      queryClient.getQueryData<T>([
-        subscriptionCacheKey ?? '$sub$__disabled__',
-      ]) ?? fallbackData,
+      queryClient.getQueryData<T>([responseCacheKey ?? '$sub$__disabled__']) ??
+      fallbackData,
     staleTime: Infinity,
     gcTime: 30_000,
     enabled: subscriptionCacheKey !== null,
@@ -354,5 +357,5 @@ export const useMihomoWsSubscription = <T>(
     setDate(Date.now())
   }, [queryClient, subscriptionCacheKey, setDate])
 
-  return { response, refresh, subscriptionCacheKey, wsRef }
+  return { response, refresh, subscriptionCacheKey: responseCacheKey, wsRef }
 }
