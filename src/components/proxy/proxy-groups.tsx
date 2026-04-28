@@ -19,7 +19,7 @@ import { delayGroup, healthcheckProxyProvider } from 'tauri-plugin-mihomo-api'
 import { BaseEmpty } from '@/components/base'
 import { useProxySelection } from '@/hooks/use-proxy-selection'
 import { useVerge } from '@/hooks/use-verge'
-import { useAppData } from '@/providers/app-data-context'
+import { useProxiesData } from '@/providers/app-data-context'
 import { calcuProxies, updateProxyChainConfigInRuntime } from '@/services/cmds'
 import delayManager from '@/services/delay'
 import { debugLog } from '@/utils/debug'
@@ -57,7 +57,7 @@ export const ProxyGroups = (props: Props) => {
   const { t } = useTranslation()
   const { mode, isChainMode = false, chainConfigData } = props
 
-  // Drive 3s polling on the shared TQ cache; data is read via useAppData() below
+  // Drive 3s polling on the shared TQ cache; data is read via granular context below
   useQuery({
     queryKey: ['getProxies'],
     queryFn: calcuProxies,
@@ -95,7 +95,7 @@ export const ProxyGroups = (props: Props) => {
   }>({ open: false, message: '' })
 
   const { verge } = useVerge()
-  const { proxies: proxiesData } = useAppData()
+  const { proxies: proxiesData } = useProxiesData()
   const groups = proxiesData?.groups
   const availableGroups = useMemo(() => {
     if (!groups) return []
