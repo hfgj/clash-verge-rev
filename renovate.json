@@ -1,33 +1,7 @@
 {
   "extends": ["config:recommended", ":disableDependencyDashboard"],
   "baseBranchPatterns": ["dev"],
-  "enabledManagers": ["cargo", "npm", "github-actions", "custom.regex"],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Track tauri-plugin-mihomo Cargo git revision on main",
-      "fileMatch": ["(^|/)src-tauri/Cargo\\.toml$"],
-      "matchStrings": [
-        "tauri-plugin-mihomo\\s*=\\s*\\{[^}]*git\\s*=\\s*\"https://github\\.com/clash-verge-rev/tauri-plugin-mihomo\"[^}]*rev\\s*=\\s*\"(?<currentDigest>[a-f0-9]{40})\"[^}]*\\}"
-      ],
-      "depNameTemplate": "tauri-plugin-mihomo",
-      "packageNameTemplate": "https://github.com/clash-verge-rev/tauri-plugin-mihomo",
-      "currentValueTemplate": "main",
-      "datasourceTemplate": "git-refs"
-    },
-    {
-      "customType": "regex",
-      "description": "Track tauri-plugin-mihomo npm API git revision on main",
-      "fileMatch": ["(^|/)package\\.json$"],
-      "matchStrings": [
-        "\"tauri-plugin-mihomo-api\"\\s*:\\s*\"github:clash-verge-rev/tauri-plugin-mihomo#(?<currentDigest>[a-f0-9]{40})\""
-      ],
-      "depNameTemplate": "tauri-plugin-mihomo-api",
-      "packageNameTemplate": "https://github.com/clash-verge-rev/tauri-plugin-mihomo",
-      "currentValueTemplate": "main",
-      "datasourceTemplate": "git-refs"
-    }
-  ],
+  "enabledManagers": ["cargo", "npm", "github-actions"],
   "labels": ["dependencies"],
   "ignorePaths": [
     "**/node_modules/**",
