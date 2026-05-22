@@ -10,6 +10,8 @@ on:
     types: [opened, reopened, synchronize]
   workflow_dispatch:
 
+if: ${{ !endsWith(github.actor, '[bot]') }}
+
 checkout: false
 permissions:
   issues: read
