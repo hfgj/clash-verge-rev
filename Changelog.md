@@ -3,6 +3,7 @@
 ### 🐞 修复问题
 
 - macOS 托盘速率可能的样式错误
+- 订阅导入 TLS 1.0/1.1 等过旧协议时显示更明确错误原因
 
 <details>
 <summary><strong> ✨ 新增功能 </strong></summary>
