@@ -190,13 +190,11 @@ impl NetworkManager {
         let mut parsed = Url::parse(url)?;
         let mut extra_headers = HeaderMap::new();
 
-        if !parsed.username().is_empty()
-            && let Some(pass) = parsed.password()
-        {
+        if !parsed.username().is_empty() {
             let username = percent_encoding::percent_decode_str(parsed.username())
                 .decode_utf8_lossy()
                 .into_owned();
-            let password = percent_encoding::percent_decode_str(pass)
+            let password = percent_encoding::percent_decode_str(parsed.password().unwrap_or_default())
                 .decode_utf8_lossy()
                 .into_owned();
             let auth_str = format!("{}:{}", username, password);
