@@ -16,13 +16,6 @@
 </details>
 
 <details>
-<summary><strong> 🧹 移除变更 </strong></summary>
-
-- 移除订阅下载 TLS 校验失败后的静态根证书回退重试
-
-</details>
-
-<details>
 <summary><strong> 🚀 优化改进 </strong></summary>
 
 - 关闭 autofill 弹出窗口
