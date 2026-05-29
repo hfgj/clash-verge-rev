@@ -66,8 +66,15 @@ import {
 } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
 import { queryClient } from '@/services/query-client'
-import { useSetLoadingCache, useThemeMode } from '@/services/states'
+import {
+  useLoadingCache,
+  useSetLoadingCache,
+  useThemeMode,
+} from '@/services/states'
 import { debugLog } from '@/utils/debug'
+
+// 与 src-tauri/src/main.rs 的 worker_limit 上限(8)保持一致，避免前后端更新风暴不对齐
+const PROFILE_UPDATE_WORKER_LIMIT = 8
 
 // 记录profile切换状态
 const debugProfileSwitch = (action: string, profile: string, extra?: any) => {
@@ -602,34 +609,68 @@ const ProfilePage = () => {
   })
 
   // 更新所有订阅
+  const loadingCache = useLoadingCache()
   const setLoadingCache = useSetLoadingCache()
-  const onUpdateAll = useLockFn(async () => {
-    const throttleMutate = throttle(mutateProfiles, 2000, {
-      trailing: true,
-    })
-    const updateOne = async (uid: string) => {
-      try {
-        await updateProfile(uid)
-        throttleMutate()
-      } catch (err: any) {
-        console.error(`更新订阅 ${uid} 失败:`, err)
-      } finally {
-        setLoadingCache((cache) => ({ ...cache, [uid]: false }))
-      }
-    }
-
-    return new Promise((resolve) => {
+  const setLoadingProfiles = useCallback(
+    (uids: string[], loading: boolean) => {
       setLoadingCache((cache) => {
-        // 获取没有正在更新的订阅
-        const items = profileItems.filter(
-          (e) => e.type === 'remote' && !cache[e.uid],
-        )
-        const change = Object.fromEntries(items.map((e) => [e.uid, true]))
-
-        Promise.allSettled(items.map((e) => updateOne(e.uid))).then(resolve)
-        return { ...cache, ...change }
+        const next = new Set(cache)
+        for (const uid of uids) {
+          if (loading) {
+            next.add(uid)
+          } else {
+            next.delete(uid)
+          }
+        }
+        return next
       })
-    })
+    },
+    [setLoadingCache],
+  )
+  const runProfileUpdates = useCallback(
+    async (uids: string[]) => {
+      if (uids.length === 0) return
+
+      const throttleMutate = throttle(mutateProfiles, 2000, {
+        trailing: true,
+      })
+      let cursor = 0
+
+      const updateOne = async (uid: string) => {
+        try {
+          await updateProfile(uid)
+          throttleMutate()
+        } catch (err: any) {
+          console.error(`更新订阅 ${uid} 失败:`, err)
+        }
+      }
+
+      const worker = async () => {
+        while (cursor < uids.length) {
+          const uid = uids[cursor++]
+          await updateOne(uid)
+        }
+      }
+
+      try {
+        const active = Math.min(PROFILE_UPDATE_WORKER_LIMIT, uids.length)
+        await Promise.allSettled(Array.from({ length: active }, worker))
+      } finally {
+        setLoadingProfiles(uids, false)
+        // 避免长时间批量更新后列表数据过晚刷新
+        void mutateProfiles()
+      }
+    },
+    [mutateProfiles, setLoadingProfiles],
+  )
+  const onUpdateAll = useLockFn(async () => {
+    const items = profileItems.filter((e) => e.type === 'remote')
+    const target = items
+      .map((item) => item.uid)
+      .filter((uid) => !loadingCache.has(uid))
+
+    setLoadingProfiles(target, true)
+    await runProfileUpdates(target)
   })
 
   const onCopyLink = async () => {
