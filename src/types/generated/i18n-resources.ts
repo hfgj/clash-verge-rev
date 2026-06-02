@@ -764,7 +764,6 @@ export interface TranslationResources {
             localBackupImported: string
             localBackupImportFailed: string
             passwordRequired: string
-            restoreCvdWarning: string
             restoreSuccess: string
             usernameRequired: string
             webdavConfigSaved: string

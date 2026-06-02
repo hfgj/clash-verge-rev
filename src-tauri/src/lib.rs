@@ -5,7 +5,6 @@ mod cmd;
 pub mod config;
 mod constants;
 mod core;
-mod cvd;
 mod enhance;
 mod feat;
 mod module;
