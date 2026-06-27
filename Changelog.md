@@ -21,6 +21,7 @@
 
 <details>
 <summary><strong> 🚀 优化改进 </strong></summary>
+- 更健壮的 service 生命周期管理
 
 - 关闭 autofill 弹出窗口
 

@@ -42,6 +42,9 @@ pub struct CoreManager {
     state: ArcSwap<State>,
     last_update: ArcSwapOption<Instant>,
     config_update_in_progress: AtomicBool,
+    // sidecar→service 交接 watcher 单实例标志。
+    #[cfg(target_os = "windows")]
+    handoff_watcher_running: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -65,6 +68,8 @@ impl Default for CoreManager {
             state: ArcSwap::new(Arc::new(State::default())),
             last_update: ArcSwapOption::new(None),
             config_update_in_progress: AtomicBool::new(false),
+            #[cfg(target_os = "windows")]
+            handoff_watcher_running: AtomicBool::new(false),
         }
     }
 }

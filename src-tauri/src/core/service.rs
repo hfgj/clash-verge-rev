@@ -142,6 +142,28 @@ const fn macos_cleanup_translocated_desired_state_shell() -> &'static str {
     "for f in '/var/root/.local/state/clash-verge-service/desired-state.json' '/var/lib/clash-verge-service/desired-state.json'; do if [ -f \"$f\" ] && /usr/bin/grep -q AppTranslocation \"$f\"; then backup=\"$f.apptranslocation.bak\"; if [ -e \"$backup\" ]; then backup=\"$f.apptranslocation.$(/bin/date +%s).bak\"; fi; /bin/mv \"$f\" \"$backup\"; fi; done"
 }
 
+/// 卸载服务前以 root 清理残留 core 和 IPC 套接字。
+#[cfg(target_os = "macos")]
+fn macos_force_stop_core_shell() -> String {
+    use crate::config::IVerge;
+
+    // 只清理 root 拥有的服务内核。
+    let mut parts: Vec<String> = IVerge::VALID_CLASH_CORES
+        .iter()
+        .map(|core| format!("/usr/bin/pkill -U root -x {core} 2>/dev/null || true"))
+        .collect();
+
+    if let Ok(ipc) = dirs::ipc_path()
+        && let Ok(ipc_str) = dirs::path_to_str(&ipc)
+    {
+        // 转义单引号,避免破坏 shell 参数。
+        let escaped = ipc_str.replace('\'', r"'\''");
+        parts.push(format!("/bin/rm -f '{escaped}' 2>/dev/null || true"));
+    }
+
+    parts.join("; ")
+}
+
 #[cfg(target_os = "macos")]
 fn escape_osascript_double_quoted_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
@@ -360,8 +382,11 @@ fn uninstall_service() -> Result<()> {
     // clash_verge_i18n::sync_locale(Config::verge().await.latest_arc().language.as_deref());
 
     let prompt = clash_verge_i18n::t!("service.adminUninstallPrompt");
-    let command =
-        format!(r#"do shell script "sudo '{uninstall_shell}'" with administrator privileges with prompt "{prompt}""#);
+    // 先清理服务残留,再执行卸载器。
+    let uninstall_quoted = uninstall_shell.replace('\'', r"'\''");
+    let shell = format!("{}; sudo '{uninstall_quoted}'", macos_force_stop_core_shell());
+    let shell = escape_osascript_double_quoted_string(&shell);
+    let command = format!(r#"do shell script "{shell}" with administrator privileges with prompt "{prompt}""#);
 
     // logging!(debug, Type::Service, "uninstall command: {}", command);
 
