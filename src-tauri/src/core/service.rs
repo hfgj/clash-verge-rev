@@ -65,10 +65,27 @@ fn service_core_path(clash_core: &str, bin_ext: &str) -> Result<PathBuf> {
         return Ok(stable_path);
     }
 
+    // 给用户一个可操作的提示,再 bail 让服务启动失败 —— 避免用临时路径起内核。
+    notify_translocated_core_path();
     bail!(
         "macOS App Translocation detected; refusing to start service with temporary core path {:?}",
         candidate
     )
+}
+
+/// 发送 translocation 用户提示。**延迟**发送:app 启动期会自动尝试起 core,此时前端的
+/// `verge://notice-message` 监听器(随 React 布局挂载后才注册)可能尚未就绪,而后端 emit
+/// 没有重放队列 —— 立即发会丢失。延迟到前端挂载后再发,既覆盖"启动自动起 core 失败"、
+/// 也兼顾手动启动(错误提示略迟可接受)。复用前端 `set_config::error` 处理器直接展示该消息。
+#[cfg(target_os = "macos")]
+fn notify_translocated_core_path() {
+    crate::process::AsyncHandler::spawn(|| async {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        crate::core::handle::Handle::notice_message(
+            "set_config::error",
+            clash_verge_i18n::t!("service.translocatedCorePath").to_string(),
+        );
+    });
 }
 
 #[cfg(target_os = "macos")]
