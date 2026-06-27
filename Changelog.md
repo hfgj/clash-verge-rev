@@ -21,8 +21,9 @@
 
 <details>
 <summary><strong> 🚀 优化改进 </strong></summary>
-- 更健壮的 service 生命周期管理
 
+- 更健壮的 service 生命周期管理
+- 更健壮的 Mihomo API 通信机制
 - 关闭 autofill 弹出窗口
 
 </details>
