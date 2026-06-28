@@ -169,6 +169,11 @@ fn escape_osascript_double_quoted_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+#[cfg(target_os = "macos")]
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
 #[cfg(target_os = "windows")]
 fn uninstall_service() -> Result<()> {
     logging!(info, Type::Service, "uninstall service");
@@ -258,17 +263,11 @@ fn uninstall_service() -> Result<()> {
         bail!(format!("uninstaller not found: {uninstall_path:?}"));
     }
 
-    let uninstall_shell: String = uninstall_path.to_string_lossy().replace(" ", "\\ ");
-
     let elevator = crate::utils::help::linux_elevator();
     let status = if linux_running_as_root() {
         StdCommand::new(&uninstall_path).status()?
     } else {
-        let result = StdCommand::new(&elevator)
-            .arg("sh")
-            .arg("-c")
-            .arg(&uninstall_shell)
-            .status()?;
+        let result = StdCommand::new(&elevator).arg(&uninstall_path).status()?;
 
         // 如果 pkexec 执行失败，回退到 sudo
         if !result.success() && elevator.contains("pkexec") {
@@ -278,11 +277,7 @@ fn uninstall_service() -> Result<()> {
                 "pkexec failed with code {}, falling back to sudo",
                 result.code().unwrap_or(-1)
             );
-            StdCommand::new("sudo")
-                .arg("sh")
-                .arg("-c")
-                .arg(&uninstall_shell)
-                .status()?
+            StdCommand::new("sudo").arg(&uninstall_path).status()?
         } else {
             result
         }
@@ -314,17 +309,11 @@ fn install_service() -> Result<()> {
         bail!(format!("installer not found: {install_path:?}"));
     }
 
-    let install_shell: String = install_path.to_string_lossy().replace(" ", "\\ ");
-
     let elevator = crate::utils::help::linux_elevator();
     let output = if linux_running_as_root() {
         StdCommand::new(&install_path).output()?
     } else {
-        let result = StdCommand::new(&elevator)
-            .arg("sh")
-            .arg("-c")
-            .arg(&install_shell)
-            .output()?;
+        let result = StdCommand::new(&elevator).arg(&install_path).output()?;
 
         // 如果 pkexec 执行失败，回退到 sudo
         if !result.status.success() && elevator.contains("pkexec") {
@@ -334,11 +323,7 @@ fn install_service() -> Result<()> {
                 "pkexec failed with code {}, falling back to sudo",
                 result.status.code().unwrap_or(-1)
             );
-            StdCommand::new("sudo")
-                .arg("sh")
-                .arg("-c")
-                .arg(&install_shell)
-                .output()?
+            StdCommand::new("sudo").arg(&install_path).output()?
         } else {
             result
         }
@@ -383,8 +368,8 @@ fn uninstall_service() -> Result<()> {
 
     let prompt = clash_verge_i18n::t!("service.adminUninstallPrompt");
     // 先清理服务残留,再执行卸载器。
-    let uninstall_quoted = uninstall_shell.replace('\'', r"'\''");
-    let shell = format!("{}; sudo '{uninstall_quoted}'", macos_force_stop_core_shell());
+    let uninstall_quoted = shell_single_quote(&uninstall_shell);
+    let shell = format!("{}; sudo {uninstall_quoted}", macos_force_stop_core_shell());
     let shell = escape_osascript_double_quoted_string(&shell);
     let command = format!(r#"do shell script "{shell}" with administrator privileges with prompt "{prompt}""#);
 
@@ -419,8 +404,9 @@ fn install_service() -> Result<()> {
 
     let gid = tauri_plugin_clash_verge_sysinfo::current_gid();
     let prompt = clash_verge_i18n::t!("service.adminInstallPrompt");
+    let install_quoted = shell_single_quote(&install_shell);
     let shell = format!(
-        "{}; sudo CLASH_VERGE_SERVICE_GID={gid} '{install_shell}'",
+        "{}; sudo CLASH_VERGE_SERVICE_GID={gid} {install_quoted}",
         macos_cleanup_translocated_desired_state_shell()
     );
     let shell = escape_osascript_double_quoted_string(&shell);
