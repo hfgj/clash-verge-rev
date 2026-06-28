@@ -113,9 +113,9 @@ export const ProxyGroups = (props: Props) => {
   const groups = proxiesData?.groups
   const availableGroups = useMemo(() => {
     if (!groups) return []
-    // 在链式代理模式下，仅显示支持选择节点的 Selector 代理组
+    // 在链式代理模式下，仅显示支持选择节点的代理组
     return isChainMode
-      ? groups.filter((g: any) => g.type === 'Selector')
+      ? groups.filter((g: any) => g.type === 'Selector' || g.type === 'URLTest')
       : groups
   }, [groups, isChainMode])
 
