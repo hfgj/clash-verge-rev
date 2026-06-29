@@ -14,8 +14,11 @@ use self::{
     tun::use_tun,
 };
 use crate::utils::dirs;
-use crate::{config::Config, utils::tmpl};
-use crate::{config::IVerge, constants};
+use crate::{
+    config::{Config, IVerge, PrfItem},
+    constants,
+    utils::tmpl,
+};
 use anyhow::{Context as _, Result};
 use clash_verge_logging::{Type, logging};
 use serde_yaml_ng::{Mapping, Value};
@@ -86,6 +89,14 @@ impl Default for ProfileItems {
                 data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
             },
         }
+    }
+}
+
+async fn chain_item_or_default(item: Option<&PrfItem>, default_item: impl FnOnce() -> ChainItem) -> ChainItem {
+    if let Some(item) = item {
+        <Option<ChainItem>>::from_async(item).await.unwrap_or_else(default_item)
+    } else {
+        default_item()
     }
 }
 
@@ -184,96 +195,36 @@ async fn collect_profile_items() -> Result<ProfileItems> {
 
     let name = current_item.name.clone().unwrap_or_default();
 
-    let merge_item = {
-        let item = profiles_arc.get_item(&merge_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Merge(Mapping::new()),
-    });
-
-    let script_item = {
-        let item = profiles_arc.get_item(&script_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
-    });
-
-    let rules_item = {
-        let item = profiles_arc.get_item(&rules_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Rules(SeqMap::default()),
-    });
-
-    let proxies_item = {
-        let item = profiles_arc.get_item(&proxies_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Proxies(SeqMap::default()),
-    });
-
-    let groups_item = {
-        let item = profiles_arc.get_item(&groups_uid).ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "".into(),
-        data: ChainType::Groups(SeqMap::default()),
-    });
-
-    let global_merge = {
-        let item = profiles_arc.get_item("Merge").ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "Merge".into(),
-        data: ChainType::Merge(Mapping::new()),
-    });
-
-    let global_script = {
-        let item = profiles_arc.get_item("Script").ok().cloned();
-        if let Some(item) = item {
-            <Option<ChainItem>>::from_async(&item).await
-        } else {
-            None
-        }
-    }
-    .unwrap_or_else(|| ChainItem {
-        uid: "Script".into(),
-        data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
-    });
+    let (merge_item, script_item, rules_item, proxies_item, groups_item, global_merge, global_script) = tokio::join!(
+        chain_item_or_default(profiles_arc.get_item(&merge_uid).ok(), || ChainItem {
+            uid: "".into(),
+            data: ChainType::Merge(Mapping::new()),
+        },),
+        chain_item_or_default(profiles_arc.get_item(&script_uid).ok(), || ChainItem {
+            uid: "".into(),
+            data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
+        },),
+        chain_item_or_default(profiles_arc.get_item(&rules_uid).ok(), || ChainItem {
+            uid: "".into(),
+            data: ChainType::Rules(SeqMap::default()),
+        },),
+        chain_item_or_default(profiles_arc.get_item(&proxies_uid).ok(), || ChainItem {
+            uid: "".into(),
+            data: ChainType::Proxies(SeqMap::default()),
+        },),
+        chain_item_or_default(profiles_arc.get_item(&groups_uid).ok(), || ChainItem {
+            uid: "".into(),
+            data: ChainType::Groups(SeqMap::default()),
+        },),
+        chain_item_or_default(profiles_arc.get_item("Merge").ok(), || ChainItem {
+            uid: "Merge".into(),
+            data: ChainType::Merge(Mapping::new()),
+        },),
+        chain_item_or_default(profiles_arc.get_item("Script").ok(), || ChainItem {
+            uid: "Script".into(),
+            data: ChainType::Script(tmpl::ITEM_SCRIPT.into()),
+        },),
+    );
 
     drop(profiles_arc);
 
