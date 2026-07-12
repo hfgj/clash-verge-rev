@@ -1119,6 +1119,7 @@ dependencies = [
  "rustls",
  "scopeguard",
  "serde",
+ "serde-xml-rs",
  "serde_json",
  "serde_yaml_ng",
  "smartstring",

@@ -5,7 +5,7 @@ use arc_swap::{ArcSwap, ArcSwapOption};
 use backon::{ConstantBuilder, Retryable as _};
 use clash_verge_logging::{Type, logging};
 use once_cell::sync::OnceCell;
-use reqwest_dav::list_cmd::{ListEntity, ListFile};
+use reqwest_dav::list_cmd::{ListEntity, ListFile, ListMultiStatus};
 use smartstring::alias::String;
 use std::{
     collections::HashMap,
@@ -227,17 +227,29 @@ impl WebDavClient {
         let path = format!("{}/", dirs::BACKUP_DIR);
 
         let fut = async {
-            let files = client.list(path.as_str(), reqwest_dav::Depth::Number(1)).await?;
+            let response = client.list_raw(path.as_str(), reqwest_dav::Depth::Number(1)).await?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(reqwest_dav::Error::Decode(reqwest_dav::DecodeError::StatusMismatched(
+                    reqwest_dav::StatusMismatchedError {
+                        response_code: status.as_u16(),
+                        expected_code: 207,
+                    },
+                )));
+            }
+
+            let xml = response.text().await?;
+            let files = parse_webdav_list(&xml)?;
             let mut final_files = Vec::new();
             for file in files {
                 if let ListEntity::File(file) = file {
                     final_files.push(file);
                 }
             }
-            Ok::<Vec<ListFile>, Error>(final_files)
+            Ok::<Vec<ListFile>, reqwest_dav::Error>(final_files)
         };
 
-        timeout(Duration::from_secs(TIMEOUT_LIST), fut).await?
+        Ok(timeout(Duration::from_secs(TIMEOUT_LIST), fut).await??)
     }
 
     pub async fn delete(&self, file_name: String) -> Result<(), Error> {
@@ -247,6 +259,44 @@ impl WebDavClient {
         let fut = client.delete(&path);
         timeout(Duration::from_secs(TIMEOUT_DELETE), fut).await??;
         Ok(())
+    }
+}
+
+fn parse_webdav_list(xml: &str) -> Result<Vec<ListEntity>, reqwest_dav::Error> {
+    // Some WebDAV servers emit RFC 2822's numeric UTC offset instead of HTTP-date's `GMT`.
+    let normalized_xml = xml.replace(" +0000</", " GMT</");
+    let multi_status: ListMultiStatus = serde_xml_rs::from_str(&normalized_xml)?;
+    multi_status.responses.into_iter().map(ListEntity::try_from).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_webdav_numeric_utc_offset() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+            <D:multistatus xmlns:D="DAV:">
+                <D:response>
+                    <D:href>/clash-verge-rev-backup/backup.zip</D:href>
+                    <D:propstat>
+                        <D:status>HTTP/1.1 200 OK</D:status>
+                        <D:prop>
+                            <D:getlastmodified>Sun, 12 Jul 2026 17:09:37 +0000</D:getlastmodified>
+                            <D:resourcetype/>
+                            <D:getcontentlength>42</D:getcontentlength>
+                            <D:getcontenttype>application/zip</D:getcontenttype>
+                        </D:prop>
+                    </D:propstat>
+                </D:response>
+            </D:multistatus>"#;
+
+        let files = parse_webdav_list(xml).expect("numeric UTC offset should be accepted");
+        let ListEntity::File(file) = &files[0] else {
+            panic!("expected a file");
+        };
+        assert_eq!(file.href, "/clash-verge-rev-backup/backup.zip");
+        assert_eq!(file.last_modified.timestamp(), 1_783_876_177);
     }
 }
 
