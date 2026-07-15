@@ -213,7 +213,7 @@ async fn restore_previous_profile(prev_profile: &String) -> CmdResult<()> {
 
 async fn handle_success(current_value: Option<&String>) -> CmdResult<ValidationOutcome> {
     Config::profiles().await.apply();
-    profiles::activate_selected_nodes().await.stringify_err()?;
+    profiles::activate_selected_nodes().stringify_err()?;
     handle::Handle::refresh_clash();
 
     if let Err(e) = Tray::global().update_tooltip().await {
