@@ -533,7 +533,9 @@ impl PrfItem {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("could not find the file"))?;
         let path = dirs::app_profiles_dir()?.join(file.as_str());
-        let content = fs::read_to_string(path).await.context("failed to read the file")?;
+        let content = fs::read_to_string(&path)
+            .await
+            .with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
         Ok(content.into())
     }
 

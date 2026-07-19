@@ -404,6 +404,18 @@ pub async fn read_profile_file(index: String) -> CmdResult<String> {
             ..Default::default()
         }
     };
+
+    if let Some(file) = item.file.as_ref() {
+        let path = dirs::app_profiles_dir().stringify_err()?.join(file.as_str());
+        match tokio::fs::try_exists(&path).await {
+            Ok(true) => {}
+            Ok(false) => return Ok(String::new()),
+            Err(err) => {
+                return Err(format!("failed to check profile file \"{}\": {err}", path.display()).into());
+            }
+        }
+    }
+
     let data = item.read_file().await.stringify_err()?;
     Ok(data)
 }
