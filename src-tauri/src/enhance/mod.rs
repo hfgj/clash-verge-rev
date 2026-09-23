@@ -326,6 +326,11 @@ const CONTROL_PLANE_KEYS: &[&str] = &[
     "unified-delay",
 ];
 
+/// TUN fields whose final values remain owned by Merge/Script in the HFGJ fork.
+/// Settings may still display and persist these fields, but must not overwrite
+/// an explicit value from the user's configuration pipeline.
+const HFGJ_CONFIG_OWNED_TUN_KEYS: &[&str] = &["dns-hijack", "route-exclude-address"];
+
 /// App-owned fields: captured after the app derives them, enforced after every override.
 struct AuthoritativeFields {
     control_plane: Mapping,
@@ -471,11 +476,37 @@ fn gui_tun_keys(clash_config: &Mapping) -> Vec<Value> {
         keys.extend(
             constants::tun::GUI_KEYS
                 .iter()
+                .filter(|key| !HFGJ_CONFIG_OWNED_TUN_KEYS.contains(key))
                 .filter(|key| tun.contains_key(**key))
                 .map(|key| Value::from(*key)),
         );
     }
     keys
+}
+
+#[cfg(test)]
+mod hfgj_config_owned_tun_tests {
+    use super::{Mapping, Value, gui_tun_keys};
+
+    #[test]
+    fn config_owned_tun_fields_are_not_authoritative() {
+        let mut tun = Mapping::new();
+        tun.insert(Value::from("dns-hijack"), Value::Sequence(vec![Value::from("any:53")]));
+        tun.insert(
+            Value::from("route-exclude-address"),
+            Value::Sequence(vec![Value::from("192.168.0.0/16")]),
+        );
+        tun.insert(Value::from("stack"), Value::from("mixed"));
+
+        let mut clash = Mapping::new();
+        clash.insert(Value::from("tun"), Value::Mapping(tun));
+
+        let keys = gui_tun_keys(&clash);
+        assert!(keys.contains(&Value::from("enable")));
+        assert!(keys.contains(&Value::from("stack")));
+        assert!(!keys.contains(&Value::from("dns-hijack")));
+        assert!(!keys.contains(&Value::from("route-exclude-address")));
+    }
 }
 
 fn snapshot_tun(config: &Mapping, gui_tun_keys: &[Value]) -> Mapping {
