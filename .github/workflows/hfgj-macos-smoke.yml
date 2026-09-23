@@ -1,0 +1,65 @@
+name: HFGJ macOS Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - hfgj
+    paths:
+      - '.github/workflows/hfgj-macos-smoke.yml'
+      - 'src-tauri/src/enhance/tun.rs'
+
+permissions:
+  contents: read
+
+jobs:
+  macos-smoke:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-smoke-aarch64-apple-darwin
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: '12.5.1'
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies and prepare resources
+        run: |
+          pnpm i --frozen-lockfile
+          pnpm run prebuild aarch64-apple-darwin
+          pnpm run web:build
+
+      - name: Build Apple Silicon smoke bundle
+        run: pnpm build --target aarch64-apple-darwin --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+      - name: Upload macOS smoke bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: clash-verge-hfgj-macos-aarch64-smoke
+          path: |
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg.sig
+          if-no-files-found: error
