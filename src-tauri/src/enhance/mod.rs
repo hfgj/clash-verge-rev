@@ -476,7 +476,7 @@ fn gui_tun_keys(clash_config: &Mapping) -> Vec<Value> {
         keys.extend(
             constants::tun::GUI_KEYS
                 .iter()
-                .filter(|key| !HFGJ_CONFIG_OWNED_TUN_KEYS.contains(key))
+                .filter(|key| !HFGJ_CONFIG_OWNED_TUN_KEYS.contains(*key))
                 .filter(|key| tun.contains_key(**key))
                 .map(|key| Value::from(*key)),
         );
