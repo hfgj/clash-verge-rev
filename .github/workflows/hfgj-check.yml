@@ -1,0 +1,25 @@
+name: HFGJ Invariant Check
+
+on:
+  push:
+    branches:
+      - hfgj
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hfgj-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify HFGJ invariants
+        run: node scripts/hfgj-check.mjs
