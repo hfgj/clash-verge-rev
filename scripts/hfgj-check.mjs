@@ -15,6 +15,8 @@ const enhance = read('src-tauri/src/enhance/mod.rs')
 const tun = read('src-tauri/src/enhance/tun.rs')
 const release = read('.github/workflows/release.yml')
 const releaseVersion = read('scripts/release-version.mjs')
+const prebuild = read('scripts/prebuild.mjs')
+const coreUpgrade = read('src-tauri/src/feat/core_upgrade.rs')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -73,6 +75,36 @@ if (!releaseVersion.includes('alpha|beta|rc|hfgj')) {
   fail('release-version.mjs no longer accepts hfgj prerelease identifiers')
 } else {
   pass('release-version.mjs accepts HFGJ versions')
+}
+
+const hfgjMihomoMarkers = [
+  'https://github.com/hfgj/mihomo/releases/download/HFGJ-Stable',
+  'https://github.com/hfgj/mihomo/releases/download/HFGJ-Alpha',
+]
+for (const marker of hfgjMihomoMarkers) {
+  if (!prebuild.includes(marker) || !coreUpgrade.includes(marker)) {
+    fail(`Windows Mihomo source is not isolated to HFGJ: missing ${marker}`)
+  }
+}
+if (
+  hfgjMihomoMarkers.every(
+    (marker) => prebuild.includes(marker) && coreUpgrade.includes(marker),
+  )
+) {
+  pass('Windows bundled/core-upgrade Mihomo sources are isolated to hfgj/mihomo')
+}
+
+if (
+  !prebuild.includes(
+    "platform === 'win32' && (arch === 'x64' || arch === 'arm64')",
+  ) ||
+  !coreUpgrade.includes(
+    'cfg!(target_os = "windows") && matches!(std::env::consts::ARCH, "x86_64" | "aarch64")',
+  )
+) {
+  fail('HFGJ Mihomo source selection is no longer limited to Windows x64/arm64')
+} else {
+  pass('HFGJ Mihomo patch remains scoped to Windows x64/arm64')
 }
 
 if (process.exitCode) {
