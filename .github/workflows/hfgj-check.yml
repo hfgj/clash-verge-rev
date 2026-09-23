@@ -54,5 +54,20 @@ jobs:
           pnpm run prebuild x86_64-pc-windows-msvc
           pnpm run web:build
 
-      - name: Compile and run HFGJ TUN ownership test
-        run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc
+      - name: Compile HFGJ TUN ownership test
+        run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc --no-run
+
+      - name: Build signed Windows x64 package
+        run: pnpm build --target x86_64-pc-windows-msvc
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+      - name: Upload Windows smoke bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: clash-verge-hfgj-windows-x64-smoke
+          path: |
+            target/x86_64-pc-windows-msvc/release/bundle/nsis/*setup.exe
+            target/x86_64-pc-windows-msvc/release/bundle/nsis/*setup.exe.sig
+          if-no-files-found: error
