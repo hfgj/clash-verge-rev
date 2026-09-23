@@ -52,6 +52,7 @@ jobs:
         run: |
           pnpm i
           pnpm run prebuild x86_64-pc-windows-msvc
+          pnpm run web:build
 
       - name: Compile and run HFGJ TUN ownership test
         run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc
