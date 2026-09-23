@@ -163,12 +163,25 @@ async function updateHashCache(targetPath) {
 const META_ALPHA_VERSION_URL =
   'https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/version.txt'
 const META_ALPHA_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha`
+const HFGJ_META_ALPHA_VERSION_URL =
+  'https://github.com/hfgj/mihomo/releases/download/HFGJ-Alpha/version.txt'
+const HFGJ_META_ALPHA_URL_PREFIX =
+  'https://github.com/hfgj/mihomo/releases/download/HFGJ-Alpha'
 let META_ALPHA_VERSION
 
 const META_VERSION_URL =
   'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt'
 const META_URL_PREFIX = `https://github.com/MetaCubeX/mihomo/releases/download`
+const HFGJ_META_VERSION_URL =
+  'https://github.com/hfgj/mihomo/releases/download/HFGJ-Stable/version.txt'
+const HFGJ_META_URL_PREFIX =
+  'https://github.com/hfgj/mihomo/releases/download/HFGJ-Stable'
 let META_VERSION
+
+// HFGJ only patches the Windows cores shipped by this fork. Other platforms,
+// and legacy 32-bit Windows builds, continue to follow upstream MetaCubeX.
+const USE_HFGJ_WINDOWS_CORE =
+  platform === 'win32' && (arch === 'x64' || arch === 'arm64')
 
 const META_ALPHA_MAP = {
   'win32-x64': 'mihomo-windows-amd64-v2',
@@ -200,8 +213,14 @@ const META_MAP = {
 
 // Release discovery
 async function getLatestAlphaVersion() {
+  const versionURL = USE_HFGJ_WINDOWS_CORE
+    ? HFGJ_META_ALPHA_VERSION_URL
+    : META_ALPHA_VERSION_URL
+  const cacheKey = USE_HFGJ_WINDOWS_CORE
+    ? 'HFGJ_META_ALPHA_VERSION'
+    : 'META_ALPHA_VERSION'
   if (!FORCE) {
-    const cached = await getCachedVersion('META_ALPHA_VERSION')
+    const cached = await getCachedVersion(cacheKey)
     if (cached) {
       META_ALPHA_VERSION = cached
       return
@@ -216,17 +235,17 @@ async function getLatestAlphaVersion() {
   if (httpProxy) options.agent = new HttpsProxyAgent(httpProxy)
 
   try {
-    const response = await fetch(META_ALPHA_VERSION_URL, {
+    const response = await fetch(versionURL, {
       ...options,
       method: 'GET',
     })
     if (!response.ok)
       throw new Error(
-        `Failed to fetch ${META_ALPHA_VERSION_URL}: ${response.status}`,
+        `Failed to fetch ${versionURL}: ${response.status}`,
       )
     META_ALPHA_VERSION = (await response.text()).trim()
     log_info(`Latest alpha version: ${META_ALPHA_VERSION}`)
-    await setCachedVersion('META_ALPHA_VERSION', META_ALPHA_VERSION)
+    await setCachedVersion(cacheKey, META_ALPHA_VERSION)
   } catch (err) {
     log_error('Error fetching latest alpha version:', err.message)
     process.exit(1)
@@ -234,8 +253,14 @@ async function getLatestAlphaVersion() {
 }
 
 async function getLatestReleaseVersion() {
+  const versionURL = USE_HFGJ_WINDOWS_CORE
+    ? HFGJ_META_VERSION_URL
+    : META_VERSION_URL
+  const cacheKey = USE_HFGJ_WINDOWS_CORE
+    ? 'HFGJ_META_VERSION'
+    : 'META_VERSION'
   if (!FORCE) {
-    const cached = await getCachedVersion('META_VERSION')
+    const cached = await getCachedVersion(cacheKey)
     if (cached) {
       META_VERSION = cached
       return
@@ -250,15 +275,15 @@ async function getLatestReleaseVersion() {
   if (httpProxy) options.agent = new HttpsProxyAgent(httpProxy)
 
   try {
-    const response = await fetch(META_VERSION_URL, {
+    const response = await fetch(versionURL, {
       ...options,
       method: 'GET',
     })
     if (!response.ok)
-      throw new Error(`Failed to fetch ${META_VERSION_URL}: ${response.status}`)
+      throw new Error(`Failed to fetch ${versionURL}: ${response.status}`)
     META_VERSION = (await response.text()).trim()
     log_info(`Latest release version: ${META_VERSION}`)
-    await setCachedVersion('META_VERSION', META_VERSION)
+    await setCachedVersion(cacheKey, META_VERSION)
   } catch (err) {
     log_error('Error fetching latest release version:', err.message)
     process.exit(1)
@@ -281,7 +306,9 @@ function clashMetaAlpha() {
     targetFile: `verge-mihomo-alpha-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
     exeFile: `${name}${isWin ? '.exe' : ''}`,
     zipFile: `${name}-${META_ALPHA_VERSION}.${urlExt}`,
-    downloadURL: `${META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.${urlExt}`,
+    downloadURL: USE_HFGJ_WINDOWS_CORE
+      ? `${HFGJ_META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.${urlExt}`
+      : `${META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.${urlExt}`,
   }
 }
 
@@ -294,7 +321,9 @@ function clashMeta() {
     targetFile: `verge-mihomo-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
     exeFile: `${name}${isWin ? '.exe' : ''}`,
     zipFile: `${name}-${META_VERSION}.${urlExt}`,
-    downloadURL: `${META_URL_PREFIX}/${META_VERSION}/${name}-${META_VERSION}.${urlExt}`,
+    downloadURL: USE_HFGJ_WINDOWS_CORE
+      ? `${HFGJ_META_URL_PREFIX}/${name}-${META_VERSION}.${urlExt}`
+      : `${META_URL_PREFIX}/${META_VERSION}/${name}-${META_VERSION}.${urlExt}`,
   }
 }
 
