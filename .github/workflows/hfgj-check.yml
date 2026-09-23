@@ -23,3 +23,35 @@ jobs:
 
       - name: Verify HFGJ invariants
         run: node scripts/hfgj-check.mjs
+
+  windows-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    needs: hfgj-check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Install dependencies and prepare resources
+        run: |
+          pnpm i
+          pnpm run prebuild x86_64-pc-windows-msvc
+
+      - name: Compile and run HFGJ TUN ownership test
+        run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc
