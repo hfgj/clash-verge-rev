@@ -17,6 +17,9 @@ const release = read('.github/workflows/release.yml')
 const releaseVersion = read('scripts/release-version.mjs')
 const prebuild = read('scripts/prebuild.mjs')
 const coreUpgrade = read('src-tauri/src/feat/core_upgrade.rs')
+const macosConfig = JSON.parse(read('src-tauri/tauri.macos.conf.json'))
+const autobuild = read('.github/workflows/autobuild.yml')
+const devWorkflow = read('.github/workflows/dev.yml')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -46,6 +49,30 @@ if (tun.includes('set_public_dns(') || tun.includes('restore_public_dns(')) {
   fail('TUN enhancement is modifying/restoring macOS system DNS')
 } else {
   pass('TUN enhancement leaves macOS system DNS untouched')
+}
+
+if (macosConfig.bundle?.macOS?.signingIdentity !== '-') {
+  fail('macOS bundle is no longer configured for explicit ad-hoc signing')
+} else {
+  pass('macOS bundle uses explicit ad-hoc signing')
+}
+
+for (const [name, workflow] of [
+  ['release', release],
+  ['autobuild', autobuild],
+  ['dev', devWorkflow],
+]) {
+  if (/APPLE_(CERTIFICATE|CERTIFICATE_PASSWORD|SIGNING_IDENTITY|ID|PASSWORD|TEAM_ID):/.test(workflow)) {
+    fail(`${name} workflow still injects Apple Developer signing/notarization secrets`)
+  } else {
+    pass(`${name} workflow does not inject Apple Developer signing/notarization secrets`)
+  }
+}
+
+if (/^\s*schedule:\s*$/m.test(autobuild)) {
+  fail('upstream scheduled Auto Build has been re-enabled')
+} else {
+  pass('upstream Auto Build remains manual-only')
 }
 
 const expectedEndpoint =
