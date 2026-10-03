@@ -21,6 +21,8 @@ const macosConfig = JSON.parse(read('src-tauri/tauri.macos.conf.json'))
 const autobuild = read('.github/workflows/autobuild.yml')
 const devWorkflow = read('.github/workflows/dev.yml')
 const upstreamSync = read('.github/workflows/hfgj-upstream-sync.yml')
+const hfgjCheckWorkflow = read('.github/workflows/hfgj-check.yml')
+const hfgjMacosSmoke = read('.github/workflows/hfgj-macos-smoke.yml')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -86,6 +88,18 @@ if (
   fail('HFGJ upstream sync workflow is missing a required stable-release safety gate')
 } else {
   pass('HFGJ upstream sync uses stable release discovery and isolated dual-platform validation')
+}
+
+for (const [name, workflow] of [
+  ['upstream-sync', upstreamSync],
+  ['hfgj-check', hfgjCheckWorkflow],
+  ['hfgj-macos-smoke', hfgjMacosSmoke],
+]) {
+  if (/uses:\s*pnpm\/action-setup@[^\n]+\n(?:[\s\S]{0,200}?\n)?\s*with:\s*\n[\s\S]{0,200}?\n\s*version:\s*['"]?\d/.test(workflow)) {
+    fail(`${name} workflow pins pnpm instead of following package.json packageManager`)
+  } else {
+    pass(`${name} workflow follows package.json packageManager for pnpm`)
+  }
 }
 
 const expectedEndpoint =

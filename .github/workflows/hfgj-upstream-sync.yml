@@ -296,7 +296,6 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: '12.5.1'
           run_install: false
 
       - name: Install Node
@@ -346,7 +345,6 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: '12.5.1'
           run_install: false
 
       - name: Install Node
