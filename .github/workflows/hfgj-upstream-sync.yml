@@ -1,0 +1,435 @@
+name: HFGJ Upstream Sync
+
+on:
+  schedule:
+    # Check upstream stable releases every 6 hours.
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Optional upstream stable tag (for example v2.5.7); empty means latest stable release'
+        required: false
+        type: string
+      force:
+        description: 'Rebuild candidate even when the upstream base version is not newer'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - hfgj
+    paths:
+      - '.github/workflows/hfgj-upstream-sync.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hfgj-upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: clash-verge-rev/clash-verge-rev
+  CANDIDATE_BRANCH: hfgj-sync-candidate
+  NODE_VERSION: '24.21.0'
+  RUST_VERSION: '1.98.1'
+
+jobs:
+  prepare:
+    name: Prepare upstream candidate
+    runs-on: ubuntu-latest
+    outputs:
+      should_sync: ${{ steps.discover.outputs.should_sync }}
+      upstream_tag: ${{ steps.discover.outputs.upstream_tag }}
+      upstream_version: ${{ steps.discover.outputs.upstream_version }}
+      target_version: ${{ steps.discover.outputs.target_version }}
+      target_tag: ${{ steps.discover.outputs.target_tag }}
+      candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
+    steps:
+      - name: Checkout HFGJ branch
+        uses: actions/checkout@v7
+        with:
+          ref: hfgj
+          fetch-depth: 0
+
+      - name: Discover latest upstream stable release
+        id: discover
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+          FORCE_SYNC: ${{ inputs.force }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UPSTREAM_TAG="${REQUESTED_TAG:-}"
+          if [ -z "$UPSTREAM_TAG" ]; then
+            UPSTREAM_TAG="$(gh api "repos/$UPSTREAM_REPOSITORY/releases/latest" --jq '.tag_name')"
+          fi
+
+          if ! [[ "$UPSTREAM_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Latest upstream release tag is not a stable x.y.z tag: $UPSTREAM_TAG"
+            exit 1
+          fi
+
+          UPSTREAM_VERSION="${UPSTREAM_TAG#v}"
+          CURRENT_VERSION="$(jq -r '.version' package.json)"
+          CURRENT_BASE="$(printf '%s' "$CURRENT_VERSION" | sed -E 's/-hfgj(\.[0-9]+)?$//; s/\+.*$//')"
+          TARGET_VERSION="${UPSTREAM_VERSION}-hfgj.1"
+          TARGET_TAG="v${TARGET_VERSION}"
+
+          echo "Current HFGJ version : $CURRENT_VERSION"
+          echo "Current upstream base: $CURRENT_BASE"
+          echo "Upstream stable      : $UPSTREAM_TAG"
+          echo "Target HFGJ version  : $TARGET_VERSION"
+
+          SHOULD_SYNC=true
+          if [ "$FORCE_SYNC" != "true" ] && ! dpkg --compare-versions "$UPSTREAM_VERSION" gt "$CURRENT_BASE"; then
+            SHOULD_SYNC=false
+            echo "No newer upstream stable release; nothing to do."
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TARGET_TAG" >/dev/null 2>&1; then
+            SHOULD_SYNC=false
+            echo "Target HFGJ tag already exists: $TARGET_TAG"
+          fi
+
+          echo "should_sync=$SHOULD_SYNC" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "target_version=$TARGET_VERSION" >> "$GITHUB_OUTPUT"
+          echo "target_tag=$TARGET_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream into isolated candidate
+        id: candidate
+        if: steps.discover.outputs.should_sync == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.discover.outputs.upstream_tag }}
+          TARGET_VERSION: ${{ steps.discover.outputs.target_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "hfgj-upstream-sync"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
+          git fetch --force upstream "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
+
+          git checkout -B "$CANDIDATE_BRANCH" origin/hfgj
+
+          set +e
+          git merge --no-ff --no-commit "$UPSTREAM_TAG"
+          MERGE_STATUS=$?
+          set -e
+
+          if [ "$MERGE_STATUS" -ne 0 ]; then
+            echo "Upstream merge reported conflicts. Auto-resolving only HFGJ-owned/version files."
+
+            resolve_theirs() {
+              local path="$1"
+              if git diff --name-only --diff-filter=U -- "$path" | grep -q .; then
+                echo "Resolve with upstream version: $path"
+                git checkout --theirs -- "$path"
+                git add "$path"
+              fi
+            }
+
+            resolve_ours() {
+              local path="$1"
+              if git diff --name-only --diff-filter=U -- "$path" | grep -q .; then
+                echo "Resolve with HFGJ version: $path"
+                git checkout --ours -- "$path"
+                git add "$path"
+              fi
+            }
+
+            # Upstream owns dependency/config evolution; HFGJ values are re-applied below.
+            resolve_theirs package.json
+            resolve_theirs src-tauri/Cargo.toml
+            resolve_theirs Cargo.lock
+            resolve_theirs src-tauri/tauri.conf.json
+            resolve_theirs src-tauri/tauri.macos.conf.json
+            resolve_theirs scripts/release-version.mjs
+
+            # These workflows are intentionally HFGJ-owned.
+            resolve_ours .github/workflows/release.yml
+            resolve_ours .github/workflows/autobuild.yml
+            resolve_ours .github/workflows/dev.yml
+
+            REMAINING="$(git diff --name-only --diff-filter=U)"
+            if [ -n "$REMAINING" ]; then
+              echo "::error::Unresolved upstream/HFGJ conflicts require review:"
+              printf '%s\n' "$REMAINING"
+              git merge --abort || true
+              exit 1
+            fi
+          fi
+
+          TARGET_VERSION="$TARGET_VERSION" python3 <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          target = os.environ["TARGET_VERSION"]
+
+          def replace_once(path, pattern, repl, flags=0):
+              p = Path(path)
+              text = p.read_text()
+              updated, count = re.subn(pattern, repl, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f"failed to update version in {path}")
+              p.write_text(updated)
+
+          replace_once(
+              "package.json",
+              r'^(\s*"version"\s*:\s*)"[^"]+"',
+              lambda m: f'{m.group(1)}"{target}"',
+              re.M,
+          )
+          replace_once(
+              "src-tauri/Cargo.toml",
+              r'^version\s*=\s*"[^"]+"',
+              f'version = "{target}"',
+              re.M,
+          )
+          replace_once(
+              "Cargo.lock",
+              r'(\[\[package\]\]\r?\nname = "clash-verge"\r?\nversion = )"[^"]+"',
+              lambda m: f'{m.group(1)}"{target}"',
+          )
+
+          tauri_path = Path("src-tauri/tauri.conf.json")
+          tauri = json.loads(tauri_path.read_text())
+          tauri["version"] = target
+          updater = tauri.setdefault("plugins", {}).setdefault("updater", {})
+          updater["endpoints"] = [
+              "https://github.com/hfgj/clash-verge-rev/releases/download/updater/update.json"
+          ]
+          updater["pubkey"] = (
+              "dW50cnVzdGVkIGNvbW1zaWduIHB1YmxpYyBrZXk6IDQ3RDFCQjg0NDBBRjMyNzM"
+              "KUldSek1xOUFoTHZSUjNWclhpSFR2dGRPQmk2bjhCb0dCeFlUOVo2QkYzKzRTYVF0UWV3SGs0TjIK"
+          )
+          tauri_path.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + "\n")
+
+          mac_path = Path("src-tauri/tauri.macos.conf.json")
+          mac = json.loads(mac_path.read_text())
+          mac.setdefault("bundle", {}).setdefault("macOS", {})["signingIdentity"] = "-"
+          mac_path.write_text(json.dumps(mac, ensure_ascii=False, indent=2) + "\n")
+
+          release_version = Path("scripts/release-version.mjs")
+          rv = release_version.read_text()
+          rv = rv.replace("(alpha|beta|rc)", "(alpha|beta|rc|hfgj)")
+          if "alpha|beta|rc|hfgj" not in rv:
+              raise SystemExit("failed to restore HFGJ version support")
+          release_version.write_text(rv)
+          PY
+
+          # HFGJ workflows must never inherit upstream Apple Developer credentials.
+          for workflow in             .github/workflows/release.yml             .github/workflows/autobuild.yml             .github/workflows/dev.yml; do
+            if [ -f "$workflow" ]; then
+              sed -i.bak -E '/^[[:space:]]+APPLE_(CERTIFICATE|CERTIFICATE_PASSWORD|SIGNING_IDENTITY|ID|PASSWORD|TEAM_ID):/d' "$workflow"
+              rm -f "$workflow.bak"
+            fi
+          done
+
+          # HFGJ does not use upstream scheduled autobuild; upstream following is handled here.
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path(".github/workflows/autobuild.yml")
+          if p.exists():
+              text = p.read_text()
+              text = text.replace(
+                  "  schedule:\n    # UTC+8 06:00, 18:00 -> UTC 22:00, 10:00\n    - cron: '0 10,22 * * *'\n",
+                  "",
+              )
+              p.write_text(text)
+          PY
+
+          git add -A
+          git diff --cached --check
+          git commit -m "chore(hfgj): sync upstream $UPSTREAM_TAG"
+
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          git push --force origin "HEAD:refs/heads/$CANDIDATE_BRANCH"
+          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Candidate ready: $CANDIDATE_SHA"
+
+  invariant:
+    name: Validate HFGJ invariants
+    if: needs.prepare.outputs.should_sync == 'true'
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Verify HFGJ invariants
+        run: node scripts/hfgj-check.mjs
+      - name: Verify clean patch
+        run: git diff --check
+
+  windows-smoke:
+    name: Windows x64 smoke
+    if: needs.prepare.outputs.should_sync == 'true'
+    needs: [prepare, invariant]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: upstream-sync-windows-x86_64-pc-windows-msvc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: '12.5.1'
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies and prepare resources
+        run: |
+          pnpm i --frozen-lockfile
+          pnpm run prebuild x86_64-pc-windows-msvc
+          pnpm run web:build
+
+      - name: Compile HFGJ TUN ownership test
+        run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc --no-run
+
+      - name: Build signed Windows x64 package
+        run: pnpm build --target x86_64-pc-windows-msvc
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+  macos-smoke:
+    name: macOS Apple Silicon smoke
+    if: needs.prepare.outputs.should_sync == 'true'
+    needs: [prepare, invariant]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: upstream-sync-macos-aarch64-apple-darwin
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: '12.5.1'
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies and prepare resources
+        run: |
+          pnpm i --frozen-lockfile
+          pnpm run prebuild aarch64-apple-darwin
+          pnpm run web:build
+
+      - name: Build ad-hoc signed Apple Silicon package
+        run: pnpm build --target aarch64-apple-darwin --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+  promote:
+    name: Promote candidate and publish tag
+    if: needs.prepare.outputs.should_sync == 'true'
+    needs: [prepare, invariant, windows-smoke, macos-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: hfgj
+          fetch-depth: 0
+
+      - name: Promote validated candidate
+        env:
+          TARGET_TAG: ${{ needs.prepare.outputs.target_tag }}
+          UPSTREAM_TAG: ${{ needs.prepare.outputs.upstream_tag }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "hfgj-upstream-sync"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin hfgj "$CANDIDATE_BRANCH"
+          CURRENT_HFGJ="$(git rev-parse origin/hfgj)"
+          FETCHED_CANDIDATE="$(git rev-parse "origin/$CANDIDATE_BRANCH")"
+
+          if [ "$FETCHED_CANDIDATE" != "$CANDIDATE_SHA" ]; then
+            echo "::error::Candidate branch changed during validation."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$CURRENT_HFGJ" "$CANDIDATE_SHA"; then
+            echo "::error::hfgj changed while candidate was validating; refusing non-fast-forward promotion."
+            exit 1
+          fi
+
+          git push origin "$CANDIDATE_SHA:refs/heads/hfgj"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TARGET_TAG" >/dev/null 2>&1; then
+            echo "::error::Target tag appeared during validation: $TARGET_TAG"
+            exit 1
+          fi
+
+          git tag -a "$TARGET_TAG" "$CANDIDATE_SHA" -m "HFGJ release $TARGET_TAG"
+          git push origin "refs/tags/$TARGET_TAG"
+
+          # Keep main as a clean mirror of the validated upstream stable tag.
+          git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
+          git fetch --force upstream "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
+          UPSTREAM_SHA="$(git rev-list -n 1 "$UPSTREAM_TAG")"
+          OLD_MAIN="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ -n "$OLD_MAIN" ]; then
+            git push --force-with-lease="refs/heads/main:$OLD_MAIN" origin "$UPSTREAM_SHA:refs/heads/main" ||               echo "::warning::Validated HFGJ release was published, but main mirror could not be updated safely."
+          fi
+
+          git push origin --delete "$CANDIDATE_BRANCH" || true
+
+          echo "Promoted $CANDIDATE_SHA to hfgj and published $TARGET_TAG."

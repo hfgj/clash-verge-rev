@@ -20,6 +20,7 @@ const coreUpgrade = read('src-tauri/src/feat/core_upgrade.rs')
 const macosConfig = JSON.parse(read('src-tauri/tauri.macos.conf.json'))
 const autobuild = read('.github/workflows/autobuild.yml')
 const devWorkflow = read('.github/workflows/dev.yml')
+const upstreamSync = read('.github/workflows/hfgj-upstream-sync.yml')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -73,6 +74,18 @@ if (/^\s*schedule:\s*$/m.test(autobuild)) {
   fail('upstream scheduled Auto Build has been re-enabled')
 } else {
   pass('upstream Auto Build remains manual-only')
+}
+
+if (
+  !upstreamSync.includes('clash-verge-rev/clash-verge-rev') ||
+  !upstreamSync.includes('releases/latest') ||
+  !upstreamSync.includes('hfgj-sync-candidate') ||
+  !upstreamSync.includes('Windows x64 smoke') ||
+  !upstreamSync.includes('macOS Apple Silicon smoke')
+) {
+  fail('HFGJ upstream sync workflow is missing a required stable-release safety gate')
+} else {
+  pass('HFGJ upstream sync uses stable release discovery and isolated dual-platform validation')
 }
 
 const expectedEndpoint =
