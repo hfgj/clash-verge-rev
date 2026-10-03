@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/workflows/hfgj-macos-smoke.yml'
       - 'src-tauri/src/enhance/tun.rs'
+      - 'src-tauri/tauri.macos.conf.json'
 
 permissions:
   contents: read
