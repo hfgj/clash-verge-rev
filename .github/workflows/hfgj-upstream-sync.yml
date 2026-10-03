@@ -170,9 +170,17 @@ jobs:
           import json
           import os
           import re
+          import subprocess
           from pathlib import Path
 
           target = os.environ["TARGET_VERSION"]
+
+          def read_hfgj_json(path):
+              raw = subprocess.check_output(
+                  ["git", "show", f"origin/hfgj:{path}"],
+                  text=True,
+              )
+              return json.loads(raw)
 
           def replace_once(path, pattern, repl, flags=0):
               p = Path(path)
@@ -203,19 +211,19 @@ jobs:
           tauri_path = Path("src-tauri/tauri.conf.json")
           tauri = json.loads(tauri_path.read_text())
           tauri["version"] = target
+          hfgj_tauri = read_hfgj_json("src-tauri/tauri.conf.json")
+          hfgj_updater = hfgj_tauri["plugins"]["updater"]
           updater = tauri.setdefault("plugins", {}).setdefault("updater", {})
-          updater["endpoints"] = [
-              "https://github.com/hfgj/clash-verge-rev/releases/download/updater/update.json"
-          ]
-          updater["pubkey"] = (
-              "dW50cnVzdGVkIGNvbW1zaWduIHB1YmxpYyBrZXk6IDQ3RDFCQjg0NDBBRjMyNzM"
-              "KUldSek1xOUFoTHZSUjNWclhpSFR2dGRPQmk2bjhCb0dCeFlUOVo2QkYzKzRTYVF0UWV3SGs0TjIK"
-          )
+          updater["endpoints"] = hfgj_updater["endpoints"]
+          updater["pubkey"] = hfgj_updater["pubkey"]
           tauri_path.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + "\n")
 
           mac_path = Path("src-tauri/tauri.macos.conf.json")
           mac = json.loads(mac_path.read_text())
-          mac.setdefault("bundle", {}).setdefault("macOS", {})["signingIdentity"] = "-"
+          hfgj_mac = read_hfgj_json("src-tauri/tauri.macos.conf.json")
+          mac.setdefault("bundle", {}).setdefault("macOS", {})["signingIdentity"] = (
+              hfgj_mac["bundle"]["macOS"]["signingIdentity"]
+          )
           mac_path.write_text(json.dumps(mac, ensure_ascii=False, indent=2) + "\n")
 
           release_version = Path("scripts/release-version.mjs")
