@@ -152,10 +152,10 @@ jobs:
             resolve_theirs src-tauri/tauri.macos.conf.json
             resolve_theirs scripts/release-version.mjs
 
-            # These workflows are intentionally HFGJ-owned.
-            resolve_ours .github/workflows/release.yml
-            resolve_ours .github/workflows/autobuild.yml
-            resolve_ours .github/workflows/dev.yml
+            # All workflow files are intentionally HFGJ-owned.
+            for workflow in $(git diff --name-only --diff-filter=U -- .github/workflows); do
+              resolve_ours "$workflow"
+            done
 
             REMAINING="$(git diff --name-only --diff-filter=U)"
             if [ -n "$REMAINING" ]; then
@@ -226,26 +226,13 @@ jobs:
           release_version.write_text(rv)
           PY
 
-          # HFGJ workflows must never inherit upstream Apple Developer credentials.
-          for workflow in             .github/workflows/release.yml             .github/workflows/autobuild.yml             .github/workflows/dev.yml; do
-            if [ -f "$workflow" ]; then
-              sed -i.bak -E '/^[[:space:]]+APPLE_(CERTIFICATE|CERTIFICATE_PASSWORD|SIGNING_IDENTITY|ID|PASSWORD|TEAM_ID):/d' "$workflow"
-              rm -f "$workflow.bak"
-            fi
-          done
-
-          # HFGJ does not use upstream scheduled autobuild; upstream following is handled here.
-          python3 <<'PY'
-          from pathlib import Path
-          p = Path(".github/workflows/autobuild.yml")
-          if p.exists():
-              text = p.read_text()
-              text = text.replace(
-                  "  schedule:\n    # UTC+8 06:00, 18:00 -> UTC 22:00, 10:00\n    - cron: '0 10,22 * * *'\n",
-                  "",
-              )
-              p.write_text(text)
-          PY
+          # Keep the whole workflow directory exactly as the current HFGJ branch.
+          # The default GITHUB_TOKEN is not allowed to push workflow-file changes.
+          git checkout origin/hfgj -- .github/workflows
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            git rm -f -- "$path"
+          done < <(git diff --name-only --diff-filter=A origin/hfgj -- .github/workflows)
 
           git add -A
           git diff --cached --check
@@ -420,15 +407,6 @@ jobs:
 
           git tag -a "$TARGET_TAG" "$CANDIDATE_SHA" -m "HFGJ release $TARGET_TAG"
           git push origin "refs/tags/$TARGET_TAG"
-
-          # Keep main as a clean mirror of the validated upstream stable tag.
-          git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
-          git fetch --force upstream "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
-          UPSTREAM_SHA="$(git rev-list -n 1 "$UPSTREAM_TAG")"
-          OLD_MAIN="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [ -n "$OLD_MAIN" ]; then
-            git push --force-with-lease="refs/heads/main:$OLD_MAIN" origin "$UPSTREAM_SHA:refs/heads/main" ||               echo "::warning::Validated HFGJ release was published, but main mirror could not be updated safely."
-          fi
 
           git push origin --delete "$CANDIDATE_BRANCH" || true
 
