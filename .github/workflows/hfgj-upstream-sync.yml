@@ -428,7 +428,7 @@ jobs:
           git push origin "refs/tags/$TARGET_TAG"
 
           echo "Dispatching Release Build for $TARGET_TAG..."
-          gh workflow run release.yml --ref hfgj -f release_tag="$TARGET_TAG"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref hfgj -f release_tag="$TARGET_TAG"
 
           git push origin --delete "$CANDIDATE_BRANCH" || true
 
@@ -448,4 +448,4 @@ jobs:
         run: |
           set -euo pipefail
           echo "Dispatching Release Build for existing tag $TARGET_TAG..."
-          gh workflow run release.yml --ref hfgj -f release_tag="$TARGET_TAG"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref hfgj -f release_tag="$TARGET_TAG"
