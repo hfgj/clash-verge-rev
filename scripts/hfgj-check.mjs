@@ -125,6 +125,17 @@ if (release.includes('https://github.com/clash-verge-rev/clash-verge-rev/release
   pass('release download URLs are fork-aware')
 }
 
+if (
+  !release.includes('workflow_dispatch:') ||
+  !release.includes("release_tag:") ||
+  !release.includes('HFGJ_RELEASE_TAG:') ||
+  !upstreamSync.includes('gh workflow run release.yml --ref hfgj -f release_tag="$TARGET_TAG"')
+) {
+  fail('automatic HFGJ release dispatch wiring is missing')
+} else {
+  pass('validated upstream sync can dispatch the HFGJ Release Build')
+}
+
 if (!releaseVersion.includes('alpha|beta|rc|hfgj')) {
   fail('release-version.mjs no longer accepts hfgj prerelease identifiers')
 } else {

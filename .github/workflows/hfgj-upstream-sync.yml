@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: hfgj-upstream-sync
@@ -44,6 +45,7 @@ jobs:
       upstream_version: ${{ steps.discover.outputs.upstream_version }}
       target_version: ${{ steps.discover.outputs.target_version }}
       target_tag: ${{ steps.discover.outputs.target_tag }}
+      release_needed: ${{ steps.discover.outputs.release_needed }}
       candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
     steps:
       - name: Checkout HFGJ branch
@@ -84,17 +86,27 @@ jobs:
           echo "Target HFGJ version  : $TARGET_VERSION"
 
           SHOULD_SYNC=true
+          RELEASE_NEEDED=false
+          TAG_EXISTS=false
+
           if [ "$FORCE_SYNC" != "true" ] && ! dpkg --compare-versions "$UPSTREAM_VERSION" gt "$CURRENT_BASE"; then
             SHOULD_SYNC=false
-            echo "No newer upstream stable release; nothing to do."
+            echo "No newer upstream stable release; source sync is not needed."
           fi
 
           if git ls-remote --exit-code --tags origin "refs/tags/$TARGET_TAG" >/dev/null 2>&1; then
+            TAG_EXISTS=true
             SHOULD_SYNC=false
             echo "Target HFGJ tag already exists: $TARGET_TAG"
+
+            if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TARGET_TAG" >/dev/null 2>&1; then
+              RELEASE_NEEDED=true
+              echo "Tag exists but GitHub Release is missing; release recovery is needed."
+            fi
           fi
 
           echo "should_sync=$SHOULD_SYNC" >> "$GITHUB_OUTPUT"
+          echo "release_needed=$RELEASE_NEEDED" >> "$GITHUB_OUTPUT"
           echo "upstream_tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
           echo "target_version=$TARGET_VERSION" >> "$GITHUB_OUTPUT"
@@ -380,6 +392,7 @@ jobs:
 
       - name: Promote validated candidate
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_TAG: ${{ needs.prepare.outputs.target_tag }}
           UPSTREAM_TAG: ${{ needs.prepare.outputs.upstream_tag }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -414,6 +427,25 @@ jobs:
           git tag -a "$TARGET_TAG" "$CANDIDATE_SHA" -m "HFGJ release $TARGET_TAG"
           git push origin "refs/tags/$TARGET_TAG"
 
+          echo "Dispatching Release Build for $TARGET_TAG..."
+          gh workflow run release.yml --ref hfgj -f release_tag="$TARGET_TAG"
+
           git push origin --delete "$CANDIDATE_BRANCH" || true
 
-          echo "Promoted $CANDIDATE_SHA to hfgj and published $TARGET_TAG."
+          echo "Promoted $CANDIDATE_SHA to hfgj, published $TARGET_TAG, and dispatched Release Build."
+
+  recover-release:
+    name: Recover missing HFGJ Release
+    if: needs.prepare.outputs.should_sync != 'true' && needs.prepare.outputs.release_needed == 'true'
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch Release Build for existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ needs.prepare.outputs.target_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Dispatching Release Build for existing tag $TARGET_TAG..."
+          gh workflow run release.yml --ref hfgj -f release_tag="$TARGET_TAG"

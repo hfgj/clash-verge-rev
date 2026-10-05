@@ -2,17 +2,26 @@ name: Release Build
 
 on:
   push:
-    # -rc tag 时预览发布, 跳过 telegram 通知、跳过 winget 提交、跳过 latest.json 文件更新
+    # -rc tag 时预览发布, 跳过 updater 更新
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing HFGJ release tag to build (for example v2.5.7-hfgj.1)'
+        required: true
+        type: string
+
 permissions: write-all
+
 env:
+  HFGJ_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: short
   HUSKY: 0
 concurrency:
-  group: '${{ github.workflow }} - ${{ github.head_ref || github.ref }}'
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: '${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}'
+  cancel-in-progress: false
 
 jobs:
   check_tag_version:
@@ -22,14 +31,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Check if tag is from HFGJ release branch
         run: |
-          TAG_REF="${GITHUB_REF##*/}"
+          TAG_REF="$HFGJ_RELEASE_TAG"
           echo "Checking if tag $TAG_REF is from hfgj branch..."
 
-          TAG_COMMIT=$(git rev-list -n 1 $TAG_REF)
+          git fetch --force origin hfgj:refs/remotes/origin/hfgj
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG_REF")
           HFGJ_COMMITS=$(git rev-list origin/hfgj)
 
           if echo "$HFGJ_COMMITS" | grep -q "$TAG_COMMIT"; then
@@ -42,7 +53,7 @@ jobs:
 
       - name: Check tag and package.json version
         run: |
-          TAG_REF="${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
+          TAG_REF="$HFGJ_RELEASE_TAG"
           echo "Current tag: $TAG_REF"
 
           PKG_VERSION=$(jq -r .version package.json)
@@ -70,13 +81,12 @@ jobs:
         id: prepare_release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_name }}
-          target_commitish: ${{ github.sha }}
-          name: 'Clash Verge Rev ${{ github.ref_name }}'
+          tag_name: ${{ env.HFGJ_RELEASE_TAG }}
+          name: 'Clash Verge Rev ${{ env.HFGJ_RELEASE_TAG }}'
           body: 'Draft release, will be updated later.'
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          prerelease: ${{ contains(env.HFGJ_RELEASE_TAG, '-rc') }}
 
   update_tag:
     name: Update tag
@@ -91,6 +101,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Group changelog platforms
         run: bash ./scripts-workflow/group_platforms.sh
@@ -103,7 +115,7 @@ jobs:
       - name: Set Env
         run: |
           echo "BUILDTIME=$(TZ=Asia/Shanghai date)" >> $GITHUB_ENV
-          TAG_REF="${GITHUB_REF##*/}"
+          TAG_REF="$HFGJ_RELEASE_TAG"
           echo "TAG_NAME=$TAG_REF" >> $GITHUB_ENV
           VERSION=$(echo "$TAG_REF" | sed 's/^v//')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -149,7 +161,7 @@ jobs:
       - name: Publish Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE: ${{ contains(github.ref_name, '-rc') }}
+          PRERELEASE: ${{ contains(env.HFGJ_RELEASE_TAG, '-rc') }}
         run: |
           release_id="${{ needs.prepare_release.outputs.release_id }}"
 
@@ -197,6 +209,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@master
@@ -255,7 +269,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.prepare_release.outputs.release_id }}
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ env.HFGJ_RELEASE_TAG }}
           releaseBody: 'Draft release, will be updated later.'
           tauriScript: pnpm
           args: --target ${{ matrix.target }}
@@ -298,6 +312,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@master
@@ -411,7 +427,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.ref_name }}" \
+          gh release upload "${{ env.HFGJ_RELEASE_TAG }}" \
             target/${{ matrix.target }}/release/bundle/deb/*.deb \
             target/${{ matrix.target }}/release/bundle/rpm/*.rpm \
             --clobber
@@ -433,6 +449,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@master
@@ -523,17 +541,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $files = Get-ChildItem "target\${{ matrix.target }}\release\bundle\nsis\*setup*" | Select-Object -ExpandProperty FullName
-          gh release upload "${{ github.ref_name }}" $files --clobber
+          gh release upload "${{ env.HFGJ_RELEASE_TAG }}" $files --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   release-update:
-    if: ${{ !contains(github.ref_name, '-rc') }}
+    if: ${{ !contains(github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name, '-rc') }}
     name: Release Update
     runs-on: ubuntu-latest
     needs: [update_tag]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Install Node
         uses: actions/setup-node@v7
@@ -554,12 +574,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release-update-for-fixed-webview2:
-    if: ${{ !contains(github.ref_name, '-rc') }}
+    if: ${{ !contains(github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name, '-rc') }}
     runs-on: ubuntu-latest
     needs: [update_tag]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Install Node
         uses: actions/setup-node@v7
@@ -619,6 +641,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HFGJ_RELEASE_TAG }}
 
       - name: Group changelog platforms
         run: bash ./scripts-workflow/group_platforms.sh
