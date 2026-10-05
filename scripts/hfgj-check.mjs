@@ -129,7 +129,9 @@ if (
   !release.includes('workflow_dispatch:') ||
   !release.includes("release_tag:") ||
   !release.includes('HFGJ_RELEASE_TAG:') ||
-  !upstreamSync.includes('gh workflow run release.yml --ref hfgj -f release_tag="$TARGET_TAG"')
+  !upstreamSync.includes('gh workflow run release.yml') ||
+  !upstreamSync.includes('--repo "$GITHUB_REPOSITORY"') ||
+  !upstreamSync.includes('-f release_tag="$TARGET_TAG"')
 ) {
   fail('automatic HFGJ release dispatch wiring is missing')
 } else {
