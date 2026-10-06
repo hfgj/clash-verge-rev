@@ -18,6 +18,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: hfgj-updater-metadata
+  cancel-in-progress: false
+
 env:
   HUSKY: 0
   HFGJ_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
