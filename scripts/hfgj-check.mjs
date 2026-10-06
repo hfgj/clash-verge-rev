@@ -23,6 +23,9 @@ const devWorkflow = read('.github/workflows/dev.yml')
 const upstreamSync = read('.github/workflows/hfgj-upstream-sync.yml')
 const hfgjCheckWorkflow = read('.github/workflows/hfgj-check.yml')
 const hfgjMacosSmoke = read('.github/workflows/hfgj-macos-smoke.yml')
+const updaterScript = read('scripts/updater.mjs')
+const fixedWebviewUpdaterScript = read('scripts/updater-fixed-webview2.mjs')
+const updaterWorkflow = read('.github/workflows/updater.yml')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -136,6 +139,35 @@ if (
   fail('automatic HFGJ release dispatch wiring is missing')
 } else {
   pass('validated upstream sync can dispatch the HFGJ Release Build')
+}
+
+if (
+  !updaterScript.includes('HFGJ_RELEASE_TAG') ||
+  !fixedWebviewUpdaterScript.includes('HFGJ_RELEASE_TAG') ||
+  !updaterScript.includes("make_latest: 'false'") ||
+  !fixedWebviewUpdaterScript.includes("make_latest: 'false'")
+) {
+  fail('updater scripts are not pinned to an explicit HFGJ release / non-latest metadata release')
+} else {
+  pass('updater scripts target HFGJ releases explicitly and keep metadata release out of Latest')
+}
+
+if (
+  !release.includes('needs: [update_tag, release-update]') ||
+  !updaterWorkflow.includes('needs: [release-update]')
+) {
+  fail('fixed-WebView2 updater is not serialized after the normal updater')
+} else {
+  pass('fixed-WebView2 updater runs after the normal updater')
+}
+
+if (
+  updaterScript.includes('resolveUpdater().catch(console.error)') ||
+  fixedWebviewUpdaterScript.includes('resolveUpdater().catch(console.error)')
+) {
+  fail('updater script errors can still be swallowed as successful Actions')
+} else {
+  pass('updater script failures propagate to GitHub Actions')
 }
 
 if (!releaseVersion.includes('alpha|beta|rc|hfgj')) {
