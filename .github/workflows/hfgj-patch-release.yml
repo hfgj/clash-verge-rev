@@ -1,0 +1,70 @@
+name: HFGJ Patch Release
+
+on:
+  push:
+    branches:
+      - hfgj
+    paths:
+      - package.json
+      - src-tauri/Cargo.toml
+      - Cargo.lock
+      - src-tauri/tauri.conf.json
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: hfgj-patch-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: startsWith(github.event.head_commit.message, 'release(hfgj):')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout HFGJ branch
+        uses: actions/checkout@v7
+        with:
+          ref: hfgj
+          fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify HFGJ invariants
+        run: node scripts/hfgj-check.mjs
+
+      - name: Create HFGJ patch tag and dispatch release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v$VERSION"
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-hfgj\.[0-9]+$ ]]; then
+            echo "::error::Not an HFGJ release version: $VERSION"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag already exists: $TAG"
+            exit 1
+          fi
+
+          git config user.name "hfgj-patch-release"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "HFGJ release $TAG"
+          git push origin "refs/tags/$TAG"
+
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref hfgj \
+            -f release_tag="$TAG"
+
+          echo "Created $TAG and dispatched Release Build."
