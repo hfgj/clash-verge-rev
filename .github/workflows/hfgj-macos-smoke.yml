@@ -8,7 +8,10 @@ on:
     paths:
       - '.github/workflows/hfgj-macos-smoke.yml'
       - 'src-tauri/src/enhance/tun.rs'
+      - 'src-tauri/src/feat/core_upgrade.rs'
       - 'src-tauri/tauri.macos.conf.json'
+      - 'scripts/prebuild.mjs'
+      - 'scripts/hfgj-check.mjs'
 
 permissions:
   contents: read
@@ -48,6 +51,16 @@ jobs:
           pnpm i --frozen-lockfile
           pnpm run prebuild aarch64-apple-darwin
           pnpm run web:build
+
+      - name: Verify bundled stable Mihomo comes from HFGJ
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE="src-tauri/sidecar/verge-mihomo-aarch64-apple-darwin"
+          test -x "$CORE"
+          VERSION="$("$CORE" -v)"
+          echo "$VERSION"
+          echo "$VERSION" | grep -E -- '-hfgj\.[0-9a-f]+'
 
       - name: Build Apple Silicon smoke bundle
         run: pnpm build --target aarch64-apple-darwin --bundles dmg

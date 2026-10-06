@@ -43,10 +43,23 @@ static STAGING_GENERATION: AtomicU64 = AtomicU64::new(0);
 /// `.rollback` and `.old` are fixed paths, so two upgrades must not overlap.
 static UPGRADE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// HFGJ patches only the Windows x64/arm64 Mihomo sidecars shipped by this fork.
-/// Other platforms and legacy 32-bit Windows remain on upstream MetaCubeX.
-fn use_hfgj_windows_core() -> bool {
+/// HFGJ Stable is published for Windows and macOS x64/arm64.
+fn use_hfgj_stable_core() -> bool {
+    (cfg!(target_os = "windows") || cfg!(target_os = "macos"))
+        && matches!(std::env::consts::ARCH, "x86_64" | "aarch64")
+}
+
+/// HFGJ Alpha currently publishes Windows x64/arm64 only.
+fn use_hfgj_alpha_core() -> bool {
     cfg!(target_os = "windows") && matches!(std::env::consts::ARCH, "x86_64" | "aarch64")
+}
+
+fn use_hfgj_core(alpha: bool) -> bool {
+    if alpha {
+        use_hfgj_alpha_core()
+    } else {
+        use_hfgj_stable_core()
+    }
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -201,7 +214,7 @@ fn package_url(alpha: bool, version: &str) -> Result<std::string::String> {
     let asset = asset_base_name(alpha)?;
     let extension = if cfg!(windows) { "zip" } else { "gz" };
 
-    if use_hfgj_windows_core() {
+    if use_hfgj_core(alpha) {
         return Ok(if alpha {
             format!("{HFGJ_ALPHA_DOWNLOAD_URL}/{asset}-{version}.{extension}")
         } else {
@@ -232,7 +245,9 @@ fn asset_base_name(alpha: bool) -> Result<&'static str> {
     } else if cfg!(target_os = "macos") {
         match arch {
             "x86_64" if alpha => "mihomo-darwin-amd64-v1-go122",
+            "x86_64" if use_hfgj_stable_core() => "mihomo-darwin-amd64-v1",
             "x86_64" => "mihomo-darwin-amd64-v2-go122",
+            "aarch64" if !alpha && use_hfgj_stable_core() => "mihomo-darwin-arm64",
             "aarch64" => "mihomo-darwin-arm64-go122",
             _ => return Err(unsupported()),
         }
@@ -253,7 +268,7 @@ fn asset_base_name(alpha: bool) -> Result<&'static str> {
 /// Returns the proxy that reached GitHub so the package download reuses it.
 #[tracing::instrument(skip_all, level = "debug", fields(alpha))]
 async fn resolve_latest_version(alpha: bool) -> Result<(ProxyType, std::string::String)> {
-    let url = if use_hfgj_windows_core() {
+    let url = if use_hfgj_core(alpha) {
         if alpha {
             HFGJ_ALPHA_VERSION_URL.to_owned()
         } else {
@@ -499,7 +514,7 @@ fn read_core_version(path: &Path) -> Result<std::string::String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_usable_version, package_url, use_hfgj_windows_core};
+    use super::{is_usable_version, package_url, use_hfgj_alpha_core, use_hfgj_stable_core};
 
     #[test]
     fn only_plain_version_tokens_reach_the_package_url() {
@@ -522,11 +537,14 @@ mod tests {
     fn package_urls_pin_the_resolved_version() {
         let release = package_url(false, "v1.19.30").unwrap_or_default();
         let alpha = package_url(true, "alpha-c0e43eb").unwrap_or_default();
-        if use_hfgj_windows_core() {
+        if use_hfgj_stable_core() {
             assert!(release.contains("/hfgj/mihomo/releases/download/HFGJ-Stable/"), "{release}");
-            assert!(alpha.contains("/hfgj/mihomo/releases/download/HFGJ-Alpha/"), "{alpha}");
         } else {
             assert!(release.contains("/releases/download/v1.19.30/"), "{release}");
+        }
+        if use_hfgj_alpha_core() {
+            assert!(alpha.contains("/hfgj/mihomo/releases/download/HFGJ-Alpha/"), "{alpha}");
+        } else {
             assert!(alpha.contains("/Prerelease-Alpha/"), "{alpha}");
         }
         assert!(
