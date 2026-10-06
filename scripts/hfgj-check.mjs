@@ -219,7 +219,7 @@ const hfgjMihomoMarkers = [
 ]
 for (const marker of hfgjMihomoMarkers) {
   if (!prebuild.includes(marker) || !coreUpgrade.includes(marker)) {
-    fail(`Windows Mihomo source is not isolated to HFGJ: missing ${marker}`)
+    fail(`HFGJ Mihomo source wiring is missing ${marker}`)
   }
 }
 if (
@@ -227,20 +227,31 @@ if (
     (marker) => prebuild.includes(marker) && coreUpgrade.includes(marker),
   )
 ) {
-  pass('Windows bundled/core-upgrade Mihomo sources are isolated to hfgj/mihomo')
+  pass('HFGJ Mihomo release channels are wired into bundling/core-upgrade')
 }
 
 if (
-  !prebuild.includes(
-    "platform === 'win32' && (arch === 'x64' || arch === 'arm64')",
-  ) ||
-  !coreUpgrade.includes(
-    'cfg!(target_os = "windows") && matches!(std::env::consts::ARCH, "x86_64" | "aarch64")',
-  )
+  !prebuild.includes("platform === 'darwin'") ||
+  !prebuild.includes("'darwin-x64': 'mihomo-darwin-amd64-v1'") ||
+  !prebuild.includes("'darwin-arm64': 'mihomo-darwin-arm64'") ||
+  !coreUpgrade.includes('cfg!(target_os = "macos")') ||
+  !coreUpgrade.includes('"mihomo-darwin-amd64-v1"') ||
+  !coreUpgrade.includes('"mihomo-darwin-arm64"')
 ) {
-  fail('HFGJ Mihomo source selection is no longer limited to Windows x64/arm64')
+  fail('macOS stable Mihomo is not isolated to HFGJ Stable')
 } else {
-  pass('HFGJ Mihomo patch remains scoped to Windows x64/arm64')
+  pass('macOS x64/arm64 bundled and upgraded stable Mihomo comes from HFGJ Stable')
+}
+
+if (
+  !prebuild.includes('const USE_HFGJ_ALPHA_CORE =') ||
+  !prebuild.includes("platform === 'win32' && (arch === 'x64' || arch === 'arm64')") ||
+  !coreUpgrade.includes('fn use_hfgj_alpha_core() -> bool') ||
+  !coreUpgrade.includes('cfg!(target_os = "windows")')
+) {
+  fail('HFGJ Alpha source scope changed unexpectedly')
+} else {
+  pass('HFGJ Alpha remains scoped to Windows x64/arm64')
 }
 
 if (process.exitCode) {

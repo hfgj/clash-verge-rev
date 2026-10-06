@@ -178,9 +178,12 @@ const HFGJ_META_URL_PREFIX =
   'https://github.com/hfgj/mihomo/releases/download/HFGJ-Stable'
 let META_VERSION
 
-// HFGJ only patches the Windows cores shipped by this fork. Other platforms,
-// and legacy 32-bit Windows builds, continue to follow upstream MetaCubeX.
-const USE_HFGJ_WINDOWS_CORE =
+// HFGJ Stable is published for Windows and macOS x64/arm64.
+// HFGJ Alpha currently only publishes Windows x64/arm64; macOS Alpha stays upstream.
+const USE_HFGJ_STABLE_CORE =
+  (platform === 'win32' || platform === 'darwin') &&
+  (arch === 'x64' || arch === 'arm64')
+const USE_HFGJ_ALPHA_CORE =
   platform === 'win32' && (arch === 'x64' || arch === 'arm64')
 
 const META_ALPHA_MAP = {
@@ -211,12 +214,19 @@ const META_MAP = {
   'linux-loong64': 'mihomo-linux-loong64',
 }
 
+const HFGJ_META_MAP = {
+  'win32-x64': 'mihomo-windows-amd64-v2',
+  'win32-arm64': 'mihomo-windows-arm64',
+  'darwin-x64': 'mihomo-darwin-amd64-v1',
+  'darwin-arm64': 'mihomo-darwin-arm64',
+}
+
 // Release discovery
 async function getLatestAlphaVersion() {
-  const versionURL = USE_HFGJ_WINDOWS_CORE
+  const versionURL = USE_HFGJ_ALPHA_CORE
     ? HFGJ_META_ALPHA_VERSION_URL
     : META_ALPHA_VERSION_URL
-  const cacheKey = USE_HFGJ_WINDOWS_CORE
+  const cacheKey = USE_HFGJ_ALPHA_CORE
     ? 'HFGJ_META_ALPHA_VERSION'
     : 'META_ALPHA_VERSION'
   if (!FORCE) {
@@ -253,10 +263,10 @@ async function getLatestAlphaVersion() {
 }
 
 async function getLatestReleaseVersion() {
-  const versionURL = USE_HFGJ_WINDOWS_CORE
+  const versionURL = USE_HFGJ_STABLE_CORE
     ? HFGJ_META_VERSION_URL
     : META_VERSION_URL
-  const cacheKey = USE_HFGJ_WINDOWS_CORE
+  const cacheKey = USE_HFGJ_STABLE_CORE
     ? 'HFGJ_META_VERSION'
     : 'META_VERSION'
   if (!FORCE) {
@@ -306,14 +316,18 @@ function clashMetaAlpha() {
     targetFile: `verge-mihomo-alpha-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
     exeFile: `${name}${isWin ? '.exe' : ''}`,
     zipFile: `${name}-${META_ALPHA_VERSION}.${urlExt}`,
-    downloadURL: USE_HFGJ_WINDOWS_CORE
+    downloadURL: USE_HFGJ_ALPHA_CORE
       ? `${HFGJ_META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.${urlExt}`
       : `${META_ALPHA_URL_PREFIX}/${name}-${META_ALPHA_VERSION}.${urlExt}`,
   }
 }
 
 function clashMeta() {
-  const name = META_MAP[`${platform}-${arch}`]
+  const key = `${platform}-${arch}`
+  const name = USE_HFGJ_STABLE_CORE ? HFGJ_META_MAP[key] : META_MAP[key]
+  if (!name) {
+    throw new Error(`clash meta unsupported HFGJ platform "${key}"`)
+  }
   const isWin = platform === 'win32'
   const urlExt = isWin ? 'zip' : 'gz'
   return {
@@ -321,7 +335,7 @@ function clashMeta() {
     targetFile: `verge-mihomo-${SIDECAR_HOST}${isWin ? '.exe' : ''}`,
     exeFile: `${name}${isWin ? '.exe' : ''}`,
     zipFile: `${name}-${META_VERSION}.${urlExt}`,
-    downloadURL: USE_HFGJ_WINDOWS_CORE
+    downloadURL: USE_HFGJ_STABLE_CORE
       ? `${HFGJ_META_URL_PREFIX}/${name}-${META_VERSION}.${urlExt}`
       : `${META_URL_PREFIX}/${META_VERSION}/${name}-${META_VERSION}.${urlExt}`,
   }
