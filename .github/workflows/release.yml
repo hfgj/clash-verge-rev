@@ -550,10 +550,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [update_tag]
     steps:
-      - name: Checkout repository
+      - name: Checkout current HFGJ updater scripts
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.HFGJ_RELEASE_TAG }}
+          ref: hfgj
 
       - name: Install Node
         uses: actions/setup-node@v7
@@ -576,12 +576,12 @@ jobs:
   release-update-for-fixed-webview2:
     if: ${{ !contains(github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name, '-rc') }}
     runs-on: ubuntu-latest
-    needs: [update_tag]
+    needs: [update_tag, release-update]
     steps:
-      - name: Checkout repository
+      - name: Checkout current HFGJ updater scripts
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.HFGJ_RELEASE_TAG }}
+          ref: hfgj
 
       - name: Install Node
         uses: actions/setup-node@v7
