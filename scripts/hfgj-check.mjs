@@ -26,6 +26,8 @@ const hfgjMacosSmoke = read('.github/workflows/hfgj-macos-smoke.yml')
 const updaterScript = read('scripts/updater.mjs')
 const fixedWebviewUpdaterScript = read('scripts/updater-fixed-webview2.mjs')
 const updaterWorkflow = read('.github/workflows/updater.yml')
+const settingsPage = read('src/pages/settings.tsx')
+const updateViewer = read('src/components/setting/mods/update-viewer.tsx')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -126,6 +128,22 @@ if (release.includes('https://github.com/clash-verge-rev/clash-verge-rev/release
   fail('release workflow still contains the upstream release download URL')
 } else {
   pass('release download URLs are fork-aware')
+}
+
+const upstreamRepoUrl = 'https://github.com/clash-verge-rev/clash-verge-rev'
+const hfgjRepoUrl = 'https://github.com/hfgj/clash-verge-rev'
+if (
+  settingsPage.includes(upstreamRepoUrl) ||
+  updateViewer.includes(upstreamRepoUrl)
+) {
+  fail('runtime UI still links to the upstream CVR repository')
+} else if (
+  !settingsPage.includes(hfgjRepoUrl) ||
+  !updateViewer.includes(`${hfgjRepoUrl}/releases/tag/v`)
+) {
+  fail('runtime UI is missing the HFGJ repository/release links')
+} else {
+  pass('runtime GitHub/release links point to hfgj/clash-verge-rev')
 }
 
 if (
