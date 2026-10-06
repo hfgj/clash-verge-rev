@@ -8,6 +8,9 @@ const UPDATE_JSON_PROXY = 'update-proxy.json'
 const ALPHA_TAG_NAME = 'updater-alpha'
 const ALPHA_UPDATE_JSON_FILE = 'update.json'
 const ALPHA_UPDATE_JSON_PROXY = 'update-proxy.json'
+const HFGJ_STABLE_TAG_RE = /^v\\d+\\.\\d+\\.\\d+-hfgj\\.\\d+$/
+
+const changelogTag = (tag) => tag.replace(/-hfgj\\.\\d+$/, '')
 
 async function resolveUpdater() {
   if (process.env.GITHUB_TOKEN === undefined) {
@@ -42,9 +45,31 @@ async function resolveUpdater() {
 
   const preReleaseRegex = /^(alpha|beta|rc|pre)$/i
 
-  const { data: latestRelease } =
-    await github.rest.repos.getLatestRelease(options)
-  const stableTag = { name: latestRelease.tag_name }
+  let stableTag
+  const requestedTag = process.env.HFGJ_RELEASE_TAG?.trim()
+
+  if (requestedTag) {
+    if (!HFGJ_STABLE_TAG_RE.test(requestedTag)) {
+      throw new Error(`Invalid HFGJ_RELEASE_TAG: ${requestedTag}`)
+    }
+    stableTag = { name: requestedTag }
+  } else {
+    const { data: releases } = await github.rest.repos.listReleases({
+      ...options,
+      per_page: 100,
+    })
+    const stableRelease = releases.find(
+      (release) =>
+        !release.draft &&
+        !release.prerelease &&
+        HFGJ_STABLE_TAG_RE.test(release.tag_name),
+    )
+    if (!stableRelease) {
+      throw new Error('No published HFGJ stable release found')
+    }
+    stableTag = { name: stableRelease.tag_name }
+  }
+
   const preReleaseTag = tags.find((t) => preReleaseRegex.test(t.name))
 
   console.log('All tags:', tags.map((t) => t.name).join(', '))
@@ -73,7 +98,7 @@ async function processRelease(github, options, tag, isAlpha) {
       tag: tag.name,
     })
 
-    const notes = await resolveUpdateLog(tag.name).catch(() =>
+    const notes = await resolveUpdateLog(changelogTag(tag.name)).catch(() =>
       resolveUpdateLogDefault().catch(() => 'No changelog available'),
     )
     const releaseUrl = `https://github.com/${options.owner}/${options.repo}/releases/tag/${tag.name}`
@@ -281,6 +306,11 @@ async function processRelease(github, options, tag, isAlpha) {
           tag: releaseTag,
         })
         updateRelease = response.data
+        await github.rest.repos.updateRelease({
+          ...options,
+          release_id: updateRelease.id,
+          make_latest: 'false',
+        })
         console.log(
           `Found existing ${releaseTag} release with ID: ${updateRelease.id}`,
         )
@@ -297,6 +327,7 @@ async function processRelease(github, options, tag, isAlpha) {
               : 'Auto-update Stable Channel',
             body: `This release contains the update information for ${isAlpha ? 'alpha' : 'stable'} channel.`,
             prerelease: isAlpha,
+            make_latest: 'false',
           })
           updateRelease = createResponse.data
           console.log(
@@ -339,21 +370,29 @@ async function processRelease(github, options, tag, isAlpha) {
         data: JSON.stringify(updateDataNew, null, 2),
       })
 
+      if (!isAlpha) {
+        await github.rest.repos.updateRelease({
+          ...options,
+          release_id: release.id,
+          make_latest: 'true',
+        })
+      }
+
       console.log(
         `Successfully uploaded ${isAlpha ? 'alpha' : 'stable'} update files to ${releaseTag}`,
       )
     } catch (error) {
-      console.error(
-        `Failed to process ${isAlpha ? 'alpha' : 'stable'} release:`,
-        error.message,
+      throw new Error(
+        `Failed to process ${isAlpha ? 'alpha' : 'stable'} updater release: ${error.message}`,
+        { cause: error },
       )
     }
   } catch (error) {
-    if (error.status === 404) {
-      console.log(`Release not found for tag: ${tag.name}, skipping...`)
-    } else {
-      console.error(`Failed to get release for tag: ${tag.name}`, error.message)
+    if (error.status === 404 && isAlpha) {
+      console.log(`Release not found for optional tag: ${tag.name}, skipping...`)
+      return
     }
+    throw error
   }
 }
 
@@ -366,4 +405,4 @@ async function getSignature(url) {
   return response.text()
 }
 
-resolveUpdater().catch(console.error)
+resolveUpdater().catch((error) => {\n  console.error(error)\n  process.exitCode = 1\n})
