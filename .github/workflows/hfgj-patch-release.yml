@@ -9,6 +9,7 @@ on:
       - src-tauri/Cargo.toml
       - Cargo.lock
       - src-tauri/tauri.conf.json
+      - '.github/workflows/hfgj-patch-release.yml'
 
 permissions:
   contents: write
@@ -74,6 +75,7 @@ jobs:
         run: |
           pnpm i --frozen-lockfile
           pnpm run prebuild aarch64-apple-darwin
+          pnpm run web:build
 
       - name: Verify bundled stable Mihomo comes from HFGJ
         shell: bash
