@@ -5,9 +5,9 @@ import { resolveUpdateLog } from './updatelog.mjs'
 const UPDATE_TAG_NAME = 'updater'
 const UPDATE_JSON_FILE = 'update-fixed-webview2.json'
 const UPDATE_JSON_PROXY = 'update-fixed-webview2-proxy.json'
-const HFGJ_STABLE_TAG_RE = /^v\\d+\\.\\d+\\.\\d+-hfgj\\.\\d+$/
+const HFGJ_STABLE_TAG_RE = /^v\d+\.\d+\.\d+-hfgj\.\d+$/
 
-const changelogTag = (tag) => tag.replace(/-hfgj\\.\\d+$/, '')
+const changelogTag = (tag) => tag.replace(/-hfgj\.\d+$/, '')
 
 async function resolveUpdater() {
   if (process.env.GITHUB_TOKEN === undefined) {
@@ -167,4 +167,7 @@ async function getSignature(url) {
   return response.text()
 }
 
-resolveUpdater().catch((error) => {\n  console.error(error)\n  process.exitCode = 1\n})
+resolveUpdater().catch((error) => {
+  console.error(error)
+  process.exitCode = 1
+})
