@@ -28,6 +28,8 @@ const fixedWebviewUpdaterScript = read('scripts/updater-fixed-webview2.mjs')
 const updaterWorkflow = read('.github/workflows/updater.yml')
 const settingsPage = read('src/pages/settings.tsx')
 const updateViewer = read('src/components/setting/mods/update-viewer.tsx')
+const updateHook = read('src/hooks/use-update.ts')
+const advancedSettings = read('src/components/setting/setting-verge-advanced.tsx')
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
@@ -186,6 +188,23 @@ if (
   fail('updater script errors can still be swallowed as successful Actions')
 } else {
   pass('updater script failures propagate to GitHub Actions')
+}
+
+if (
+  !advancedSettings.includes('const { checkUpdate } = useUpdate(false)') ||
+  advancedSettings.includes('checkUpdateSafe as checkUpdate') ||
+  !updateHook.includes('revalidateOnMount: shouldAutoCheck') ||
+  !updateHook.includes('enabled: true')
+) {
+  fail('manual app update checks are not synchronized through the shared update cache')
+} else {
+  pass('manual app update checks populate the shared update cache used by the update dialog')
+}
+
+if (updateViewer.includes('if (!updateInfo?.body) return')) {
+  fail('update installation still incorrectly requires non-empty release notes')
+} else {
+  pass('update installation does not depend on release notes being present')
 }
 
 if (!releaseVersion.includes('alpha|beta|rc|hfgj')) {

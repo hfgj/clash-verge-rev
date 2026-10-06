@@ -233,7 +233,7 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
   }, [updateInfo])
 
   const onUpdate = useLockFn(async () => {
-    if (!updateInfo?.body) return
+    if (!updateInfo) return
     if (breakChangeFlag) {
       showNotice.error('settings.modals.update.messages.breakChangeError')
       return

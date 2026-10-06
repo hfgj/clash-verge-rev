@@ -23,7 +23,7 @@ export const useUpdate = (enabled: boolean = true) => {
   const { verge } = useVerge()
   const { auto_check_update } = verge || {}
 
-  const shouldCheck = enabled && auto_check_update !== false
+  const shouldAutoCheck = enabled && auto_check_update !== false
 
   const fetchUpdate = async () => {
     const result = await checkUpdateSafe()
@@ -34,10 +34,11 @@ export const useUpdate = (enabled: boolean = true) => {
   const { data: updateInfo, isFetching: isValidating } = useQuery({
     queryKey: ['checkUpdate'],
     queryFn: fetchUpdate,
-    enabled: shouldCheck,
-    retry: 2,
+    enabled: true,
+    retry: shouldAutoCheck ? 2 : false,
     staleTime: 60 * 60 * 1000,
-    refetchInterval: 24 * 60 * 60 * 1000,
+    revalidateOnMount: shouldAutoCheck,
+    refetchInterval: shouldAutoCheck ? 24 * 60 * 60 * 1000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   })
