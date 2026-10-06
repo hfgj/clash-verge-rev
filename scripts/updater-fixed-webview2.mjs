@@ -5,6 +5,9 @@ import { resolveUpdateLog } from './updatelog.mjs'
 const UPDATE_TAG_NAME = 'updater'
 const UPDATE_JSON_FILE = 'update-fixed-webview2.json'
 const UPDATE_JSON_PROXY = 'update-fixed-webview2-proxy.json'
+const HFGJ_STABLE_TAG_RE = /^v\\d+\\.\\d+\\.\\d+-hfgj\\.\\d+$/
+
+const changelogTag = (tag) => tag.replace(/-hfgj\\.\\d+$/, '')
 
 async function resolveUpdater() {
   if (process.env.GITHUB_TOKEN === undefined) {
@@ -14,16 +17,41 @@ async function resolveUpdater() {
   const options = { owner: context.repo.owner, repo: context.repo.repo }
   const github = getOctokit(process.env.GITHUB_TOKEN)
 
-  const { data: latestRelease } =
-    await github.rest.repos.getLatestRelease(options)
-  const tag = { name: latestRelease.tag_name }
+  let targetTag = process.env.HFGJ_RELEASE_TAG?.trim()
+
+  if (targetTag) {
+    if (!HFGJ_STABLE_TAG_RE.test(targetTag)) {
+      throw new Error(`Invalid HFGJ_RELEASE_TAG: ${targetTag}`)
+    }
+  } else {
+    const { data: releases } = await github.rest.repos.listReleases({
+      ...options,
+      per_page: 100,
+    })
+    const stableRelease = releases.find(
+      (release) =>
+        !release.draft &&
+        !release.prerelease &&
+        HFGJ_STABLE_TAG_RE.test(release.tag_name),
+    )
+    if (!stableRelease) {
+      throw new Error('No published HFGJ stable release found')
+    }
+    targetTag = stableRelease.tag_name
+  }
+
+  const { data: latestRelease } = await github.rest.repos.getReleaseByTag({
+    ...options,
+    tag: targetTag,
+  })
+  const tag = { name: targetTag }
 
   console.log(tag)
   console.log()
 
   const updateData = {
     name: tag.name,
-    notes: await resolveUpdateLog(tag.name), // use Changelog.md
+    notes: await resolveUpdateLog(changelogTag(tag.name)),
     pub_date: new Date().toISOString(),
     platforms: {
       'windows-x86_64': { signature: '', url: '' },
@@ -88,6 +116,12 @@ async function resolveUpdater() {
     tag: UPDATE_TAG_NAME,
   })
 
+  await github.rest.repos.updateRelease({
+    ...options,
+    release_id: updateRelease.id,
+    make_latest: 'false',
+  })
+
   for (const asset of updateRelease.assets) {
     if (asset.name === UPDATE_JSON_FILE) {
       await github.rest.repos.deleteReleaseAsset({
@@ -116,6 +150,12 @@ async function resolveUpdater() {
     name: UPDATE_JSON_PROXY,
     data: JSON.stringify(updateDataNew, null, 2),
   })
+
+  await github.rest.repos.updateRelease({
+    ...options,
+    release_id: latestRelease.id,
+    make_latest: 'true',
+  })
 }
 
 async function getSignature(url) {
@@ -127,4 +167,4 @@ async function getSignature(url) {
   return response.text()
 }
 
-resolveUpdater().catch(console.error)
+resolveUpdater().catch((error) => {\n  console.error(error)\n  process.exitCode = 1\n})
