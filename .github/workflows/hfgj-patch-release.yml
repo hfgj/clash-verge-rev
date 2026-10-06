@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
     if: startsWith(github.event.head_commit.message, 'release(hfgj):')
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +36,74 @@ jobs:
 
       - name: Verify HFGJ invariants
         run: node scripts/hfgj-check.mjs
+
+  macos-stable-core-smoke:
+    if: startsWith(github.event.head_commit.message, 'release(hfgj):')
+    needs: verify
+    runs-on: macos-latest
+    steps:
+      - name: Checkout HFGJ branch
+        uses: actions/checkout@v7
+        with:
+          ref: hfgj
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: patch-release-macos-aarch64-apple-darwin
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies and prepare Apple Silicon resources
+        run: |
+          pnpm i --frozen-lockfile
+          pnpm run prebuild aarch64-apple-darwin
+
+      - name: Verify bundled stable Mihomo comes from HFGJ
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE="src-tauri/sidecar/verge-mihomo-aarch64-apple-darwin"
+          test -x "$CORE"
+          VERSION="$("$CORE" -v)"
+          echo "$VERSION"
+          echo "$VERSION" | grep -E -- '-hfgj\.[0-9a-f]+'
+
+      - name: Compile and run core-upgrade URL tests
+        run: |
+          cargo test             --manifest-path src-tauri/Cargo.toml             package_urls_pin_the_resolved_version             --target aarch64-apple-darwin
+
+  release:
+    if: startsWith(github.event.head_commit.message, 'release(hfgj):')
+    needs: [verify, macos-stable-core-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout HFGJ branch
+        uses: actions/checkout@v7
+        with:
+          ref: hfgj
+          fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
 
       - name: Create HFGJ patch tag and dispatch release
         env:
