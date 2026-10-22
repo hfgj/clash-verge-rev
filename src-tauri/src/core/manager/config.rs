@@ -141,6 +141,7 @@ impl CoreManager {
                 dns_override: None,
                 exists_keys: HashSet::new(),
                 chain_logs: Default::default(),
+                proxy_chain_original_dialers: Default::default(),
             }
         });
 
