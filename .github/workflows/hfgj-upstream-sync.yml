@@ -3,7 +3,7 @@ name: HFGJ Upstream Sync
 on:
   schedule:
     # Check upstream stable releases every 6 hours.
-    - cron: '23 */6 * * *'
+    - cron: '29 */6 * * *'
   workflow_dispatch:
     inputs:
       upstream_tag:
@@ -63,6 +63,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          RELEASE_STATE="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml" --jq '.state')"
+          if [ "$RELEASE_STATE" != "active" ]; then
+            echo "::error::Release Build is $RELEASE_STATE; enable it before syncing upstream."
+            exit 1
+          fi
 
           UPSTREAM_TAG="${REQUESTED_TAG:-}"
           if [ -z "$UPSTREAM_TAG" ]; then
@@ -326,6 +332,9 @@ jobs:
       - name: Compile HFGJ TUN ownership test
         run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc --no-run
 
+      - name: Run dialer-proxy regressions
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib proxy_chain_tests --target x86_64-pc-windows-msvc
+
       - name: Build signed Windows x64 package
         run: pnpm build --target x86_64-pc-windows-msvc
         env:
@@ -371,6 +380,9 @@ jobs:
           pnpm i --frozen-lockfile
           pnpm run prebuild aarch64-apple-darwin
           pnpm run web:build
+
+      - name: Run dialer-proxy regressions
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib proxy_chain_tests --target aarch64-apple-darwin
 
       - name: Build ad-hoc signed Apple Silicon package
         run: pnpm build --target aarch64-apple-darwin --bundles dmg

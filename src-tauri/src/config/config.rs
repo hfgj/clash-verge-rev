@@ -242,6 +242,7 @@ impl Config {
                 dns_override: Some(dns_override),
                 exists_keys,
                 chain_logs: logs,
+                proxy_chain_original_dialers: Default::default(),
             }
         });
 
