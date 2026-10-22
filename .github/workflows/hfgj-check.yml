@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: hfgj-check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   hfgj-check:
     runs-on: ubuntu-latest
@@ -24,57 +28,5 @@ jobs:
       - name: Verify HFGJ invariants
         run: node scripts/hfgj-check.mjs
 
-  windows-smoke:
-    if: github.event_name == 'workflow_dispatch'
-    needs: hfgj-check
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.98.1'
-          targets: x86_64-pc-windows-msvc
-
-      - name: Cache Rust dependencies and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: windows-smoke-x86_64-pc-windows-msvc
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.21.0'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies and prepare resources
-        run: |
-          pnpm i
-          pnpm run prebuild x86_64-pc-windows-msvc
-          pnpm run web:build
-
-      - name: Compile HFGJ TUN ownership test
-        run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc --no-run
-
-      - name: Build signed Windows x64 package
-        run: pnpm build --target x86_64-pc-windows-msvc
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-
-      - name: Upload Windows smoke bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: clash-verge-hfgj-windows-x64-smoke
-          path: |
-            target/x86_64-pc-windows-msvc/release/bundle/nsis/*setup.exe
-            target/x86_64-pc-windows-msvc/release/bundle/nsis/*setup.exe.sig
-          if-no-files-found: error
+      - name: Verify release artifact guards
+        run: node --test scripts/hfgj-release.test.mjs

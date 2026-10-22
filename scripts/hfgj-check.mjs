@@ -23,6 +23,8 @@ const devWorkflow = read('.github/workflows/dev.yml')
 const upstreamSync = read('.github/workflows/hfgj-upstream-sync.yml')
 const hfgjCheckWorkflow = read('.github/workflows/hfgj-check.yml')
 const hfgjMacosSmoke = read('.github/workflows/hfgj-macos-smoke.yml')
+const releaseHelper = read('scripts/hfgj-release.mjs')
+const patchRelease = read('.github/workflows/hfgj-patch-release.yml')
 const updaterScript = read('scripts/updater.mjs')
 const fixedWebviewUpdaterScript = read('scripts/updater-fixed-webview2.mjs')
 const updaterWorkflow = read('.github/workflows/updater.yml')
@@ -89,8 +91,8 @@ if (
   !upstreamSync.includes('clash-verge-rev/clash-verge-rev') ||
   !upstreamSync.includes('releases/latest') ||
   !upstreamSync.includes('hfgj-sync-candidate') ||
-  !upstreamSync.includes('Windows x64 smoke') ||
-  !upstreamSync.includes('macOS Apple Silicon smoke')
+  !upstreamSync.includes('Build and validate release packages') ||
+  !release.includes('--lib proxy_chain_tests')
 ) {
   fail('HFGJ upstream sync workflow is missing a required stable-release safety gate')
 } else {
@@ -98,6 +100,7 @@ if (
 }
 
 for (const [name, workflow] of [
+  ['release', release],
   ['upstream-sync', upstreamSync],
   ['hfgj-check', hfgjCheckWorkflow],
   ['hfgj-macos-smoke', hfgjMacosSmoke],
@@ -149,36 +152,35 @@ if (
 }
 
 if (
-  !release.includes('workflow_dispatch:') ||
-  !release.includes("release_tag:") ||
-  !release.includes('HFGJ_RELEASE_TAG:') ||
-  !upstreamSync.includes('gh workflow run release.yml') ||
-  !upstreamSync.includes('--repo "$GITHUB_REPOSITORY"') ||
-  !upstreamSync.includes('-f release_tag="$TARGET_TAG"')
+  !release.includes('workflow_call:') ||
+  !release.includes('artifact_run_id:') ||
+  !upstreamSync.includes('uses: ./.github/workflows/release.yml') ||
+  !patchRelease.includes('uses: ./.github/workflows/release.yml') ||
+  !upstreamSync.includes('artifact_run_id: ${{ github.run_id }}') ||
+  !patchRelease.includes('artifact_run_id: ${{ github.run_id }}') ||
+  upstreamSync.includes('gh workflow run release.yml') ||
+  patchRelease.includes('gh workflow run release.yml')
 ) {
-  fail('automatic HFGJ release dispatch wiring is missing')
+  fail('HFGJ release callers do not reuse the validated packages')
 } else {
-  pass('validated upstream sync can dispatch the HFGJ Release Build')
+  pass('upstream and patch releases reuse validated artifacts without a second build')
 }
 
 if (
-  !updaterScript.includes('HFGJ_RELEASE_TAG') ||
-  !fixedWebviewUpdaterScript.includes('HFGJ_RELEASE_TAG') ||
-  !updaterScript.includes("make_latest: 'false'") ||
-  !fixedWebviewUpdaterScript.includes("make_latest: 'false'")
+  !releaseHelper.includes('HFGJ_RELEASE_TAG') ||
+  !releaseHelper.includes("make_latest: 'false'") ||
+  !releaseHelper.includes('verifyArtifacts(') ||
+  !prebuild.includes('const pinned = pinnedCoreVersion()')
 ) {
-  fail('updater scripts are not pinned to an explicit HFGJ release / non-latest metadata release')
+  fail('HFGJ release identity, integrity, or pinned core guards are missing')
 } else {
-  pass('updater scripts target HFGJ releases explicitly and keep metadata release out of Latest')
+  pass('release artifacts are checked against their source, version, and pinned core')
 }
 
-if (
-  !release.includes('needs: [update_tag, release-update]') ||
-  !updaterWorkflow.includes('needs: [release-update]')
-) {
-  fail('fixed-WebView2 updater is not serialized after the normal updater')
-} else {
-  pass('fixed-WebView2 updater runs after the normal updater')
+for (const workflow of [release, updaterWorkflow]) {
+  if (!workflow.includes('node scripts/updater.mjs\n          node scripts/updater-fixed-webview2.mjs')) {
+    fail('normal and Fixed WebView2 updater writes are not serialized')
+  }
 }
 
 if (

@@ -20,121 +20,79 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
+  prepare:
     if: startsWith(github.event.head_commit.message, 'release(hfgj):')
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      source_sha: ${{ steps.version.outputs.source_sha }}
     steps:
-      - name: Checkout HFGJ branch
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
-          ref: hfgj
+          ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Install Node
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24.21.0'
-
-      - name: Verify HFGJ invariants
-        run: node scripts/hfgj-check.mjs
-
-  macos-stable-core-smoke:
-    if: startsWith(github.event.head_commit.message, 'release(hfgj):')
-    needs: verify
-    runs-on: macos-latest
-    steps:
-      - name: Checkout HFGJ branch
-        uses: actions/checkout@v7
-        with:
-          ref: hfgj
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.98.1'
-          targets: aarch64-apple-darwin
-
-      - name: Cache Rust dependencies and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: patch-release-macos-aarch64-apple-darwin
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.21.0'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies and prepare Apple Silicon resources
-        run: |
-          pnpm i --frozen-lockfile
-          pnpm run prebuild aarch64-apple-darwin
-          pnpm run web:build
-
-      - name: Verify bundled stable Mihomo comes from HFGJ
-        shell: bash
-        run: |
-          set -euo pipefail
-          CORE="src-tauri/sidecar/verge-mihomo-aarch64-apple-darwin"
-          test -x "$CORE"
-          VERSION="$("$CORE" -v)"
-          echo "$VERSION"
-          echo "$VERSION" | grep -E -- '-hfgj\.[0-9a-f]+'
-
-      - name: Compile and run core-upgrade URL tests
-        run: |
-          cargo test             --manifest-path src-tauri/Cargo.toml             package_urls_pin_the_resolved_version             --target aarch64-apple-darwin
-
-  release:
-    if: startsWith(github.event.head_commit.message, 'release(hfgj):')
-    needs: [verify, macos-stable-core-smoke]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout HFGJ branch
-        uses: actions/checkout@v7
-        with:
-          ref: hfgj
-          fetch-depth: 0
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.21.0'
-
-      - name: Create HFGJ patch tag and dispatch release
+      - name: Verify version and release workflow
+        id: version
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-
+          node scripts/hfgj-check.mjs
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml" --jq '.state')" = active
           VERSION="$(node -p "require('./package.json').version")"
-          TAG="v$VERSION"
-
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-hfgj\.[0-9]+$ ]]; then
-            echo "::error::Not an HFGJ release version: $VERSION"
+            echo "::error::Not an HFGJ stable version: $VERSION"
             exit 1
           fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag already exists: $TAG"
-            exit 1
+  build:
+    needs: prepare
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.tag }}
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+      publish: false
+    secrets: inherit
+
+  tag:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          fetch-depth: 0
+      - name: Tag the validated source
+        env:
+          TARGET_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin hfgj
+          test "$(git rev-parse origin/hfgj)" = "$SOURCE_SHA"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TARGET_TAG" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$TARGET_TAG:refs/tags/$TARGET_TAG"
+            test "$(git rev-list -n 1 "$TARGET_TAG")" = "$SOURCE_SHA"
+          else
+            git config user.name "hfgj-patch-release"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TARGET_TAG" "$SOURCE_SHA" -m "HFGJ release $TARGET_TAG"
+            git push origin "refs/tags/$TARGET_TAG"
           fi
 
-          git config user.name "hfgj-patch-release"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "HFGJ release $TAG"
-          git push origin "refs/tags/$TAG"
-
-          gh workflow run release.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref hfgj \
-            -f release_tag="$TAG"
-
-          echo "Created $TAG and dispatched Release Build."
+  publish:
+    needs: [prepare, build, tag]
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.tag }}
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+      artifact_run_id: ${{ github.run_id }}
+      publish: true
+    secrets: inherit
