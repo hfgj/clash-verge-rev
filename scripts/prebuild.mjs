@@ -10,6 +10,7 @@ import { glob } from 'glob'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import { extract } from 'tar'
 
+import { pinnedCoreVersion } from './hfgj-release.mjs'
 import { resolveServiceRelease } from './service-release.mjs'
 import { log_debug, log_error, log_info, log_success } from './utils.mjs'
 
@@ -263,6 +264,11 @@ async function getLatestAlphaVersion() {
 }
 
 async function getLatestReleaseVersion() {
+  const pinned = pinnedCoreVersion()
+  if (USE_HFGJ_STABLE_CORE && pinned) {
+    META_VERSION = pinned
+    return
+  }
   const versionURL = USE_HFGJ_STABLE_CORE
     ? HFGJ_META_VERSION_URL
     : META_VERSION_URL

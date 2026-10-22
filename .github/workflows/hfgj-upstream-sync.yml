@@ -33,7 +33,6 @@ env:
   UPSTREAM_REPOSITORY: clash-verge-rev/clash-verge-rev
   CANDIDATE_BRANCH: hfgj-sync-candidate
   NODE_VERSION: '24.21.0'
-  RUST_VERSION: '1.98.1'
 
 jobs:
   prepare:
@@ -53,6 +52,11 @@ jobs:
         with:
           ref: hfgj
           fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Discover latest upstream stable release
         id: discover
@@ -98,6 +102,8 @@ jobs:
           if [ "$FORCE_SYNC" != "true" ] && ! dpkg --compare-versions "$UPSTREAM_VERSION" gt "$CURRENT_BASE"; then
             SHOULD_SYNC=false
             echo "No newer upstream stable release; source sync is not needed."
+            TARGET_VERSION="$CURRENT_VERSION"
+            TARGET_TAG="v$TARGET_VERSION"
           fi
 
           if git ls-remote --exit-code --tags origin "refs/tags/$TARGET_TAG" >/dev/null 2>&1; then
@@ -105,10 +111,7 @@ jobs:
             SHOULD_SYNC=false
             echo "Target HFGJ tag already exists: $TARGET_TAG"
 
-            if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TARGET_TAG" >/dev/null 2>&1; then
-              RELEASE_NEEDED=true
-              echo "Tag exists but GitHub Release is missing; release recovery is needed."
-            fi
+            RELEASE_NEEDED="$(HFGJ_RELEASE_TAG="$TARGET_TAG" node scripts/hfgj-release.mjs needs-release)"
           fi
 
           echo "should_sync=$SHOULD_SYNC" >> "$GITHUB_OUTPUT"
@@ -289,111 +292,21 @@ jobs:
       - name: Verify clean patch
         run: git diff --check
 
-  windows-smoke:
-    name: Windows x64 smoke
+  build:
+    name: Build and validate release packages
     if: needs.prepare.outputs.should_sync == 'true'
     needs: [prepare, invariant]
-    runs-on: windows-latest
-    steps:
-      - name: Checkout candidate
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.prepare.outputs.candidate_sha }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          targets: x86_64-pc-windows-msvc
-
-      - name: Cache Rust dependencies and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: upstream-sync-windows-x86_64-pc-windows-msvc
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies and prepare resources
-        run: |
-          pnpm i --frozen-lockfile
-          pnpm run prebuild x86_64-pc-windows-msvc
-          pnpm run web:build
-
-      - name: Compile HFGJ TUN ownership test
-        run: cargo test --manifest-path src-tauri/Cargo.toml hfgj_config_owned_tun_tests --target x86_64-pc-windows-msvc --no-run
-
-      - name: Run dialer-proxy regressions
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib proxy_chain_tests --target x86_64-pc-windows-msvc
-
-      - name: Build signed Windows x64 package
-        run: pnpm build --target x86_64-pc-windows-msvc
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-
-  macos-smoke:
-    name: macOS Apple Silicon smoke
-    if: needs.prepare.outputs.should_sync == 'true'
-    needs: [prepare, invariant]
-    runs-on: macos-latest
-    steps:
-      - name: Checkout candidate
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.prepare.outputs.candidate_sha }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          targets: aarch64-apple-darwin
-
-      - name: Cache Rust dependencies and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: upstream-sync-macos-aarch64-apple-darwin
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies and prepare resources
-        run: |
-          pnpm i --frozen-lockfile
-          pnpm run prebuild aarch64-apple-darwin
-          pnpm run web:build
-
-      - name: Run dialer-proxy regressions
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib proxy_chain_tests --target aarch64-apple-darwin
-
-      - name: Build ad-hoc signed Apple Silicon package
-        run: pnpm build --target aarch64-apple-darwin --bundles dmg
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.target_tag }}
+      source_sha: ${{ needs.prepare.outputs.candidate_sha }}
+      publish: false
+    secrets: inherit
 
   promote:
     name: Promote candidate and publish tag
     if: needs.prepare.outputs.should_sync == 'true'
-    needs: [prepare, invariant, windows-smoke, macos-smoke]
+    needs: [prepare, invariant, build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -439,25 +352,27 @@ jobs:
           git tag -a "$TARGET_TAG" "$CANDIDATE_SHA" -m "HFGJ release $TARGET_TAG"
           git push origin "refs/tags/$TARGET_TAG"
 
-          echo "Dispatching Release Build for $TARGET_TAG..."
-          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref hfgj -f release_tag="$TARGET_TAG"
-
           git push origin --delete "$CANDIDATE_BRANCH" || true
 
-          echo "Promoted $CANDIDATE_SHA to hfgj, published $TARGET_TAG, and dispatched Release Build."
+          echo "Promoted $CANDIDATE_SHA to hfgj, published $TARGET_TAG, and published the validated tag."
+
+  publish:
+    name: Publish validated packages
+    needs: [prepare, build, promote]
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.target_tag }}
+      source_sha: ${{ needs.prepare.outputs.candidate_sha }}
+      artifact_run_id: ${{ github.run_id }}
+      publish: true
+    secrets: inherit
 
   recover-release:
-    name: Recover missing HFGJ Release
+    name: Recover incomplete HFGJ release
     if: needs.prepare.outputs.should_sync != 'true' && needs.prepare.outputs.release_needed == 'true'
     needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - name: Dispatch Release Build for existing tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ needs.prepare.outputs.target_tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Dispatching Release Build for existing tag $TARGET_TAG..."
-          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref hfgj -f release_tag="$TARGET_TAG"
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.target_tag }}
+      publish: true
+    secrets: inherit

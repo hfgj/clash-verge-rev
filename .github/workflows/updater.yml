@@ -7,13 +7,6 @@ on:
         description: 'Optional HFGJ release tag; empty selects newest published HFGJ release'
         required: false
         type: string
-  push:
-    branches:
-      - hfgj
-    paths:
-      - 'scripts/updater.mjs'
-      - 'scripts/updater-fixed-webview2.mjs'
-      - '.github/workflows/updater.yml'
 
 permissions:
   contents: write
@@ -40,40 +33,9 @@ jobs:
         with:
           node-version: '24.21.0'
 
-      - uses: pnpm/action-setup@v6
-        name: Install pnpm
-        with:
-          run_install: false
-
-      - name: Pnpm install
-        run: pnpm i --frozen-lockfile
-
-      - name: Release updater file
-        run: pnpm updater
+      - name: Update normal then Fixed WebView2 metadata
+        run: |
+          node scripts/updater.mjs
+          node scripts/updater-fixed-webview2.mjs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  release-update-for-fixed-webview2:
-    runs-on: ubuntu-latest
-    needs: [release-update]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.21.0'
-
-      - uses: pnpm/action-setup@v6
-        name: Install pnpm
-        with:
-          run_install: false
-
-      - name: Pnpm install
-        run: pnpm i --frozen-lockfile
-
-      - name: Release updater file
-        run: pnpm updater-fixed-webview2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
