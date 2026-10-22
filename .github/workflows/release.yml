@@ -120,10 +120,17 @@ jobs:
           pnpm run web:build
       - name: Run source regressions before packaging
         if: matrix.variant != 'windows-x64-fixed'
+        shell: bash
         run: |
-          cargo test --manifest-path src-tauri/Cargo.toml --lib proxy_chain_tests --target ${{ matrix.target }}
-          cargo test --manifest-path src-tauri/Cargo.toml --lib hfgj_config_owned_tun_tests --target ${{ matrix.target }}
-          cargo test --manifest-path src-tauri/Cargo.toml --lib package_urls_pin_the_resolved_version --target ${{ matrix.target }}
+          set -euo pipefail
+          TEST_FEATURES=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # The clippy feature embeds Common Controls v6 into MSVC test executables.
+            TEST_FEATURES="clippy"
+          fi
+          cargo test --manifest-path src-tauri/Cargo.toml --lib proxy_chain_tests --target ${{ matrix.target }} --features "$TEST_FEATURES"
+          cargo test --manifest-path src-tauri/Cargo.toml --lib hfgj_config_owned_tun_tests --target ${{ matrix.target }} --features "$TEST_FEATURES"
+          cargo test --manifest-path src-tauri/Cargo.toml --lib package_urls_pin_the_resolved_version --target ${{ matrix.target }} --features "$TEST_FEATURES"
       - name: Download Fixed WebView2 runtime
         if: matrix.variant == 'windows-x64-fixed'
         shell: pwsh
