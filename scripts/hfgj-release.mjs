@@ -429,7 +429,6 @@ export async function publishUpdater(fixed = false) {
     await select('macos-arm64', 1, ['darwin-aarch64', 'darwin-aarch64-app'])
   }
   const data = {
-    name: tag,
     version: tag.slice(1),
     notes: await releaseNotes(tag),
     pub_date: release.published_at,
