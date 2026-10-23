@@ -140,6 +140,21 @@ test('updater publishes only supported platforms with signatures and fails befor
       })),
   }
   const writes = []
+  const assertVersionMetadata = (filenames) => {
+    for (const filename of filenames) {
+      const upload = writes.find((write) =>
+        write.url.endsWith(`?name=${filename}`),
+      )
+      assert.ok(upload, `Missing updater metadata: ${filename}`)
+      const metadata = JSON.parse(upload.options.body.toString())
+      assert.equal(
+        Object.hasOwn(metadata, 'name'),
+        false,
+        `${filename}: name aliases version in the Tauri updater`,
+      )
+      assert.equal(metadata.version, tag.slice(1))
+    }
+  }
   globalThis.fetch = async (url, options = {}) => {
     if (options.method && options.method !== 'GET') {
       writes.push({ url, options })
@@ -153,6 +168,7 @@ test('updater publishes only supported platforms with signatures and fails befor
     throw new Error(`Unexpected request: ${url}`)
   }
   await publishUpdater(false)
+  assertVersionMetadata(['update.json', 'update-proxy.json'])
   const normal = JSON.parse(
     writes
       .find((write) => write.url.endsWith('?name=update.json'))
@@ -169,6 +185,10 @@ test('updater publishes only supported platforms with signatures and fails befor
   assert.match(normal.platforms['darwin-aarch64'].url, /\.app\.tar\.gz$/)
   writes.length = 0
   await publishUpdater(true)
+  assertVersionMetadata([
+    'update-fixed-webview2.json',
+    'update-fixed-webview2-proxy.json',
+  ])
   const fixed = JSON.parse(
     writes
       .find((write) => write.url.endsWith('?name=update-fixed-webview2.json'))
