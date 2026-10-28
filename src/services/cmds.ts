@@ -139,6 +139,10 @@ export async function getProxyView(): Promise<ProxyViewV1> {
   if (view.schemaVersion !== 1) {
     throw new Error('Unsupported proxy view schema: ' + view.schemaVersion)
   }
+  // Incomplete snapshots must not replace SWR's last complete view.
+  if (view.providerState === 'unavailable') {
+    throw new Error('Proxy providers are unavailable')
+  }
   return view
 }
 
