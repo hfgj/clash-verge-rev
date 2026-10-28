@@ -116,12 +116,24 @@ pub(crate) async fn proxy_view(provider_timeout: Option<std::time::Duration>) ->
 
     let mihomo = Handle::mihomo();
     let (proxies, providers) = tokio::join!(mihomo.get_proxies(), async {
+        let started = std::time::Instant::now();
         match provider_timeout {
             Some(timeout) => tokio::time::timeout(timeout, mihomo.get_proxy_providers())
                 .await
                 .ok()
                 .and_then(Result::ok),
-            None => mihomo.get_proxy_providers().await.ok(),
+            None => mihomo
+                .get_proxy_providers()
+                .await
+                .inspect_err(|error| {
+                    logging!(
+                        warn,
+                        Type::Cmd,
+                        "Proxy provider snapshot failed after {} ms: {error:?}",
+                        started.elapsed().as_millis()
+                    );
+                })
+                .ok(),
         }
     });
     let proxies = proxies.stringify_err()?;
