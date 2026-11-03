@@ -20,9 +20,7 @@ const SettingPage = () => {
   }
 
   const toGithubRepo = useLockFn(() =>
-    openExternalUrl('https://github.com/hfgj/clash-verge-rev').catch(
-      onError,
-    ),
+    openExternalUrl('https://github.com/hfgj/clash-verge-rev').catch(onError),
   )
 
   const toGithubDoc = useLockFn(() =>

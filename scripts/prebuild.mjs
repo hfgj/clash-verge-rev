@@ -251,9 +251,7 @@ async function getLatestAlphaVersion() {
       method: 'GET',
     })
     if (!response.ok)
-      throw new Error(
-        `Failed to fetch ${versionURL}: ${response.status}`,
-      )
+      throw new Error(`Failed to fetch ${versionURL}: ${response.status}`)
     META_ALPHA_VERSION = (await response.text()).trim()
     log_info(`Latest alpha version: ${META_ALPHA_VERSION}`)
     await setCachedVersion(cacheKey, META_ALPHA_VERSION)
@@ -272,9 +270,7 @@ async function getLatestReleaseVersion() {
   const versionURL = USE_HFGJ_STABLE_CORE
     ? HFGJ_META_VERSION_URL
     : META_VERSION_URL
-  const cacheKey = USE_HFGJ_STABLE_CORE
-    ? 'HFGJ_META_VERSION'
-    : 'META_VERSION'
+  const cacheKey = USE_HFGJ_STABLE_CORE ? 'HFGJ_META_VERSION' : 'META_VERSION'
   if (!FORCE) {
     const cached = await getCachedVersion(cacheKey)
     if (cached) {

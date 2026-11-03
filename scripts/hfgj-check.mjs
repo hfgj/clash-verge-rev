@@ -31,13 +31,21 @@ const updaterWorkflow = read('.github/workflows/updater.yml')
 const settingsPage = read('src/pages/settings.tsx')
 const updateViewer = read('src/components/setting/mods/update-viewer.tsx')
 const updateHook = read('src/hooks/use-update.ts')
-const advancedSettings = read('src/components/setting/setting-verge-advanced.tsx')
+const advancedSettings = read(
+  'src/components/setting/setting-verge-advanced.tsx',
+)
 
 const packageVersion = packageJson.version
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1]
-const lockVersion = cargoLock.match(/\[\[package\]\]\r?\nname = "clash-verge"\r?\nversion = "([^"]+)"/)?.[1]
+const lockVersion = cargoLock.match(
+  /\[\[package\]\]\r?\nname = "clash-verge"\r?\nversion = "([^"]+)"/,
+)?.[1]
 
-if (packageVersion !== tauriConfig.version || packageVersion !== cargoVersion || packageVersion !== lockVersion) {
+if (
+  packageVersion !== tauriConfig.version ||
+  packageVersion !== cargoVersion ||
+  packageVersion !== lockVersion
+) {
   fail(
     `version mismatch: package=${packageVersion}, tauri=${tauriConfig.version}, cargo=${cargoVersion}, lock=${lockVersion}`,
   )
@@ -46,13 +54,19 @@ if (packageVersion !== tauriConfig.version || packageVersion !== cargoVersion ||
 }
 
 for (const key of ['dns-hijack', 'route-exclude-address']) {
-  if (!enhance.includes(`HFGJ_CONFIG_OWNED_TUN_KEYS: &[&str] = &["dns-hijack", "route-exclude-address"]`)) {
+  if (
+    !enhance.includes(
+      `HFGJ_CONFIG_OWNED_TUN_KEYS: &[&str] = &["dns-hijack", "route-exclude-address"]`,
+    )
+  ) {
     fail('HFGJ config-owned TUN allowlist is missing or changed')
     break
   }
 }
 if (
-  enhance.includes('HFGJ_CONFIG_OWNED_TUN_KEYS: &[&str] = &["dns-hijack", "route-exclude-address"]')
+  enhance.includes(
+    'HFGJ_CONFIG_OWNED_TUN_KEYS: &[&str] = &["dns-hijack", "route-exclude-address"]',
+  )
 ) {
   pass('dns-hijack and route-exclude-address remain config-owned')
 }
@@ -74,10 +88,18 @@ for (const [name, workflow] of [
   ['autobuild', autobuild],
   ['dev', devWorkflow],
 ]) {
-  if (/APPLE_(CERTIFICATE|CERTIFICATE_PASSWORD|SIGNING_IDENTITY|ID|PASSWORD|TEAM_ID):/.test(workflow)) {
-    fail(`${name} workflow still injects Apple Developer signing/notarization secrets`)
+  if (
+    /APPLE_(CERTIFICATE|CERTIFICATE_PASSWORD|SIGNING_IDENTITY|ID|PASSWORD|TEAM_ID):/.test(
+      workflow,
+    )
+  ) {
+    fail(
+      `${name} workflow still injects Apple Developer signing/notarization secrets`,
+    )
   } else {
-    pass(`${name} workflow does not inject Apple Developer signing/notarization secrets`)
+    pass(
+      `${name} workflow does not inject Apple Developer signing/notarization secrets`,
+    )
   }
 }
 
@@ -94,9 +116,13 @@ if (
   !upstreamSync.includes('Build and validate release packages') ||
   !release.includes('--lib proxy_chain_tests')
 ) {
-  fail('HFGJ upstream sync workflow is missing a required stable-release safety gate')
+  fail(
+    'HFGJ upstream sync workflow is missing a required stable-release safety gate',
+  )
 } else {
-  pass('HFGJ upstream sync uses stable release discovery and isolated dual-platform validation')
+  pass(
+    'HFGJ upstream sync uses stable release discovery and isolated dual-platform validation',
+  )
 }
 
 for (const [name, workflow] of [
@@ -105,8 +131,14 @@ for (const [name, workflow] of [
   ['hfgj-check', hfgjCheckWorkflow],
   ['hfgj-macos-smoke', hfgjMacosSmoke],
 ]) {
-  if (/uses:\s*pnpm\/action-setup@[^\n]+\n(?:[\s\S]{0,200}?\n)?\s*with:\s*\n[\s\S]{0,200}?\n\s*version:\s*['"]?\d/.test(workflow)) {
-    fail(`${name} workflow pins pnpm instead of following package.json packageManager`)
+  if (
+    /uses:\s*pnpm\/action-setup@[^\n]+\n(?:[\s\S]{0,200}?\n)?\s*with:\s*\n[\s\S]{0,200}?\n\s*version:\s*['"]?\d/.test(
+      workflow,
+    )
+  ) {
+    fail(
+      `${name} workflow pins pnpm instead of following package.json packageManager`,
+    )
   } else {
     pass(`${name} workflow follows package.json packageManager for pnpm`)
   }
@@ -129,7 +161,11 @@ if (tauriConfig.plugins?.updater?.pubkey !== expectedPubkey) {
   pass('updater public key matches HFGJ key')
 }
 
-if (release.includes('https://github.com/clash-verge-rev/clash-verge-rev/releases/download')) {
+if (
+  release.includes(
+    'https://github.com/clash-verge-rev/clash-verge-rev/releases/download',
+  )
+) {
   fail('release workflow still contains the upstream release download URL')
 } else {
   pass('release download URLs are fork-aware')
@@ -163,7 +199,9 @@ if (
 ) {
   fail('HFGJ release callers do not reuse the validated packages')
 } else {
-  pass('upstream and patch releases reuse validated artifacts without a second build')
+  pass(
+    'upstream and patch releases reuse validated artifacts without a second build',
+  )
 }
 
 if (
@@ -174,11 +212,17 @@ if (
 ) {
   fail('HFGJ release identity, integrity, or pinned core guards are missing')
 } else {
-  pass('release artifacts are checked against their source, version, and pinned core')
+  pass(
+    'release artifacts are checked against their source, version, and pinned core',
+  )
 }
 
 for (const workflow of [release, updaterWorkflow]) {
-  if (!workflow.includes('node scripts/updater.mjs\n          node scripts/updater-fixed-webview2.mjs')) {
+  if (
+    !workflow.includes(
+      'node scripts/updater.mjs\n          node scripts/updater-fixed-webview2.mjs',
+    )
+  ) {
     fail('normal and Fixed WebView2 updater writes are not serialized')
   }
 }
@@ -198,9 +242,13 @@ if (
   !updateHook.includes('revalidateOnMount: shouldAutoCheck') ||
   !updateHook.includes('enabled: true')
 ) {
-  fail('manual app update checks are not synchronized through the shared update cache')
+  fail(
+    'manual app update checks are not synchronized through the shared update cache',
+  )
 } else {
-  pass('manual app update checks populate the shared update cache used by the update dialog')
+  pass(
+    'manual app update checks populate the shared update cache used by the update dialog',
+  )
 }
 
 if (updateViewer.includes('if (!updateInfo?.body) return')) {
@@ -242,12 +290,16 @@ if (
 ) {
   fail('macOS stable Mihomo is not isolated to HFGJ Stable')
 } else {
-  pass('macOS x64/arm64 bundled and upgraded stable Mihomo comes from HFGJ Stable')
+  pass(
+    'macOS x64/arm64 bundled and upgraded stable Mihomo comes from HFGJ Stable',
+  )
 }
 
 if (
   !prebuild.includes('const USE_HFGJ_ALPHA_CORE =') ||
-  !prebuild.includes("platform === 'win32' && (arch === 'x64' || arch === 'arm64')") ||
+  !prebuild.includes(
+    "platform === 'win32' && (arch === 'x64' || arch === 'arm64')",
+  ) ||
   !coreUpgrade.includes('fn use_hfgj_alpha_core() -> bool') ||
   !coreUpgrade.includes('cfg!(target_os = "windows")')
 ) {
