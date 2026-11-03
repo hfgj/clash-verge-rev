@@ -62,12 +62,10 @@ fn use_hfgj_core(alpha: bool) -> bool {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, specta::Type)]
 pub struct CoreUpgradeReport {
     /// False when the managed core was already at the latest version.
     pub upgraded: bool,
-    pub from: std::string::String,
-    pub to: std::string::String,
 }
 
 pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
@@ -90,11 +88,7 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     logging!(debug, Type::Core, "core upgrade: latest version resolved via {proxy:?}");
 
     if !force && installed == latest {
-        return Ok(CoreUpgradeReport {
-            upgraded: false,
-            from: installed,
-            to: latest,
-        });
+        return Ok(CoreUpgradeReport { upgraded: false });
     }
 
     let package = download_package(proxy, alpha, &latest).await?;
@@ -178,11 +172,7 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     #[cfg(windows)]
     let _ = std::fs::remove_file(target.with_extension("old"));
 
-    Ok(CoreUpgradeReport {
-        upgraded: true,
-        from: installed,
-        to: latest,
-    })
+    Ok(CoreUpgradeReport { upgraded: true })
 }
 
 /// Whether this upgrade handed bytes to the Service's approved core directory.
