@@ -1,13 +1,14 @@
-import { invoke } from '@tauri-apps/api/core'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import type { ProxyViewV1 } from '@/types/proxy-view'
 
 import { getProxyView } from './cmds'
 
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
+
 vi.mock('@tauri-apps/api/core', () => ({
   Channel: vi.fn(),
-  invoke: vi.fn(),
+  invoke,
 }))
 vi.mock('@/services/notice-service', () => ({ showNotice: vi.fn() }))
 
@@ -23,10 +24,10 @@ const ready: ProxyViewV1 = {
   providers: [],
 }
 
-beforeEach(() => vi.mocked(invoke).mockReset())
+beforeEach(() => invoke.mockReset())
 
 test('rejects transient provider-unavailable snapshots while allowing recovery', async () => {
-  vi.mocked(invoke)
+  invoke
     .mockResolvedValueOnce(ready)
     .mockResolvedValueOnce({ ...ready, providerState: 'unavailable' })
     .mockResolvedValueOnce(ready)
@@ -39,6 +40,6 @@ test('rejects transient provider-unavailable snapshots while allowing recovery',
 })
 
 test('preserves a failed core request as a query error', async () => {
-  vi.mocked(invoke).mockRejectedValueOnce(new Error('core disconnected'))
+  invoke.mockRejectedValueOnce(new Error('core disconnected'))
   await expect(getProxyView()).rejects.toThrow('core disconnected')
 })
