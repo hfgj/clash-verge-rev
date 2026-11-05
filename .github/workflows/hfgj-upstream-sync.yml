@@ -229,6 +229,17 @@ jobs:
               lambda m: f'{m.group(1)}"{target}"',
           )
 
+          # HFGJ replaces upstream's Octokit-based updater scripts with its own
+          # gh-based release helper, so @actions/github remains an upstream-only
+          # dependency. Dropping it keeps package.json, pnpm-lock.yaml, and knip
+          # aligned after the merge resolves package.json with upstream's copy.
+          package_path = Path("package.json")
+          package = json.loads(package_path.read_text())
+          if package.get("devDependencies", {}).pop("@actions/github", None) is not None:
+              package_path.write_text(
+                  json.dumps(package, ensure_ascii=False, indent=2) + "\n"
+              )
+
           tauri_path = Path("src-tauri/tauri.conf.json")
           tauri = json.loads(tauri_path.read_text())
           tauri["version"] = target
@@ -287,6 +298,12 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Verify lockfile matches package.json
+        run: pnpm install --frozen-lockfile --lockfile-only
       - name: Verify HFGJ invariants
         run: node scripts/hfgj-check.mjs
       - name: Verify clean patch
