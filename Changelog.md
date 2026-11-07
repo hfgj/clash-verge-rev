@@ -30,6 +30,10 @@
      GitHub, so they never reach users. -->
 ## v2.5.10
 
+**HFGJ 定制版沿用的修复**
+
+- macOS：保持系统 DNS 用户自有，TUN 模式不再设置或恢复 DNS
+
 <details>
 <summary><strong> 🐞 修复问题 </strong></summary>
 

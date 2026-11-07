@@ -9,26 +9,15 @@ use clash_verge_logging::{Type, logging};
 use parking_lot::Mutex;
 use std::sync::mpsc::RecvTimeoutError;
 use tokio::time::Duration;
-#[cfg(target_os = "macos")]
-use tokio::time::timeout;
 
 #[cfg(target_os = "windows")]
 const SESSION_ENDING_STOP_TIMEOUT: Duration = Duration::from_secs(2);
-// TODO(macOS): a DNS script already running can outlast this and write after exit.
 #[cfg(not(target_os = "windows"))]
 const SESSION_ENDING_STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
-// Outlasts the script's own kill deadline.
-#[cfg(target_os = "macos")]
-const DNS_RESTORE_TIMEOUT: Duration =
-    crate::utils::resolve::dns::DNS_SCRIPT_TIMEOUT.saturating_add(Duration::from_secs(1));
-#[cfg(not(target_os = "macos"))]
-const DNS_RESTORE_TIMEOUT: Duration = Duration::ZERO;
-
 // Backstop for when the cleanup's own deadlines cannot fire.
-const SESSION_ENDING_HARD_DEADLINE: Duration = SESSION_ENDING_STOP_TIMEOUT
-    .saturating_add(DNS_RESTORE_TIMEOUT)
-    .saturating_add(Duration::from_secs(1));
+const SESSION_ENDING_HARD_DEADLINE: Duration =
+    SESSION_ENDING_STOP_TIMEOUT.saturating_add(Duration::from_secs(1));
 
 #[derive(Debug, Clone, Default)]
 pub struct CleanupResult {
@@ -100,23 +89,8 @@ where
     .await
 }
 
-async fn restore_dns_after_core_stop() -> bool {
-    #[cfg(target_os = "macos")]
-    match timeout(DNS_RESTORE_TIMEOUT, crate::utils::resolve::dns::restore_public_dns()).await {
-        Ok(Ok(())) => {
-            logging!(debug, Type::Window, "DNS设置已恢复");
-            true
-        }
-        Ok(Err(err)) => {
-            logging!(warn, Type::Window, "恢复DNS设置失败: {err:#}");
-            false
-        }
-        Err(_) => {
-            logging!(warn, Type::Window, "恢复DNS设置超时");
-            false
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
+async fn skip_dns_restore() -> bool {
+    // HFGJ: macOS system DNS is user-owned; never restore or rewrite it.
     true
 }
 
@@ -190,7 +164,7 @@ pub async fn clean_async() -> CleanupResult {
                 }
             }
         },
-        restore_dns_after_core_stop,
+        skip_dns_restore,
     )
     .await;
     result.stop_error = stop_error.into_inner();
@@ -282,7 +256,7 @@ async fn clean_session_ending_best_effort() -> CleanupResult {
                 SESSION_ENDING_STOP_TIMEOUT.as_secs()
             );
         },
-        restore_dns_after_core_stop,
+        skip_dns_restore,
     )
     .await;
 
