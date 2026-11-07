@@ -1,6 +1,13 @@
 import fs from 'node:fs'
+import path from 'node:path'
 
-const read = (path) => fs.readFileSync(path, 'utf8')
+const read = (file) => fs.readFileSync(file, 'utf8')
+const rustFiles = (dir) =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return rustFiles(full)
+    return entry.name.endsWith('.rs') ? [full] : []
+  })
 const fail = (message) => {
   console.error(`[HFGJ CHECK] ${message}`)
   process.exitCode = 1
@@ -13,6 +20,7 @@ const cargoToml = read('src-tauri/Cargo.toml')
 const cargoLock = read('Cargo.lock')
 const enhance = read('src-tauri/src/enhance/mod.rs')
 const tun = read('src-tauri/src/enhance/tun.rs')
+const dns = read('src-tauri/src/utils/resolve/dns.rs')
 const release = read('.github/workflows/release.yml')
 const releaseVersion = read('scripts/release-version.mjs')
 const prebuild = read('scripts/prebuild.mjs')
@@ -75,6 +83,19 @@ if (tun.includes('set_public_dns(') || tun.includes('restore_public_dns(')) {
   fail('TUN enhancement is modifying/restoring macOS system DNS')
 } else {
   pass('TUN enhancement leaves macOS system DNS untouched')
+}
+
+const forbiddenDns =
+  /\b(set_public_dns|unset_public_dns|restore_public_dns|needs_public_dns)\b|set_dns\.sh|unset_dns\.sh/
+const dnsOffenders = rustFiles('src-tauri/src').filter((file) =>
+  forbiddenDns.test(read(file)),
+)
+if (dnsOffenders.length > 0) {
+  fail(`macOS system DNS code remains in ${dnsOffenders.join(', ')}`)
+} else if (!/\bpub async fn sync_public_dns\s*\(\)\s*\{\s*\}/.test(dns)) {
+  fail('macOS DNS sync is not a no-op')
+} else {
+  pass('macOS system DNS is never read or modified by the fork')
 }
 
 if (macosConfig.bundle?.macOS?.signingIdentity !== '-') {
