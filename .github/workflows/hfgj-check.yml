@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - hfgj
+    paths:
+      - 'package.json'
+      - 'Cargo.lock'
+      - 'src-tauri/**'
+      - 'src/pages/settings.tsx'
+      - 'src/components/setting/mods/update-viewer.tsx'
+      - 'src/hooks/use-update.ts'
+      - 'src/components/setting/setting-verge-advanced.tsx'
+      - 'scripts/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
@@ -15,6 +25,9 @@ concurrency:
 
 jobs:
   hfgj-check:
+    if: >-
+      !startsWith(github.event.head_commit.message || '', 'release(hfgj):') &&
+      !startsWith(github.event.head_commit.message || '', 'chore(hfgj): sync upstream')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
