@@ -2,8 +2,8 @@ name: HFGJ Upstream Sync
 
 on:
   schedule:
-    # Check upstream stable releases every 6 hours.
-    - cron: '29 */6 * * *'
+    # Check upstream stable releases once a day.
+    - cron: '29 3 * * *'
   workflow_dispatch:
     inputs:
       upstream_tag:
